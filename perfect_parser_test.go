@@ -26,13 +26,13 @@ func TestPerfectParse(t *testing.T) {
 
 	tc := []testCase{
 		{
-			sql: "SELECT * FROM db1.t1",
+			sql: `SELECT * FROM db1.t1`,
 			expect: []string{
-				"SELECT * FROM db1.t1",
+				`SELECT * FROM db1.t1`,
 			},
 		},
 		{
-			sql: "SELECT * FROM db1.t1;SELECT * FROM db2.t2",
+			sql: `SELECT * FROM db1.t1;SELECT * FROM db2.t2`,
 			expect: []string{
 				"SELECT * FROM db1.t1;",
 				"SELECT * FROM db2.t2",
@@ -96,6 +96,178 @@ func TestPerfectParse(t *testing.T) {
 				"OPTIMIZE TABLE foo",
 			},
 		},
+		{
+			sql: `
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+END;
+`,
+			expect: []string{
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+END;`,
+			},
+		},
+		{
+			sql: `
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+SELECT COUNT(*)  FROM user;
+END;
+`,
+			expect: []string{
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+SELECT COUNT(*)  FROM user;
+END;`,
+			},
+		},
+		{
+			sql: `
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+SELECT COUNT(*)  FROM user;
+SELECT COUNT(*)  FROM user;
+END;
+`,
+			expect: []string{
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+SELECT COUNT(*)  FROM user;
+SELECT COUNT(*)  FROM user;
+END;`,
+			},
+		},
+		{
+			sql: `
+SELECT * FROM db1.t1;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+END;
+`,
+			expect: []string{
+				`SELECT * FROM db1.t1;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+END;`,
+			},
+		},
+		{
+			sql: `
+SELECT * FROM db1.t1;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+`,
+			expect: []string{
+				`SELECT * FROM db1.t1;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+			},
+		},
+		{
+			sql: `
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+SELECT * FROM db1.t1;
+`,
+			expect: []string{
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+				`SELECT * FROM db1.t1;`,
+			},
+		},
+		{
+			sql: `
+SELECT * FROM db1.t1;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+SELECT * FROM db1.t1;
+`,
+			expect: []string{
+				`SELECT * FROM db1.t1;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+				`SELECT * FROM db1.t1;`,
+			},
+		},
+		{
+			sql: `
+SELECT * FROM db1.t1;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+SELECT * FROM db1.t1;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+SELECT * FROM db1.t1;
+`,
+			expect: []string{
+				`SELECT * FROM db1.t1;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+				`SELECT * FROM db1.t1;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+				`SELECT * FROM db1.t1;`,
+			},
+		},
 	}
 	for _, c := range tc {
 		stmt, _, err := parser.PerfectParse(c.sql, "", "")
@@ -105,10 +277,11 @@ func TestPerfectParse(t *testing.T) {
 		}
 		if len(c.expect) != len(stmt) {
 			t.Errorf("expect sql length is %d, actual is %d", len(c.expect), len(stmt))
-		}
-		for i, s := range stmt {
-			if s.Text() != c.expect[i] {
-				t.Errorf("expect sql is %s, actual is %s", c.expect[i], s.Text())
+		} else {
+			for i, s := range stmt {
+				if s.Text() != c.expect[i] {
+					t.Errorf("expect sql is [%s], actual is [%s]", c.expect[i], s.Text())
+				}
 			}
 		}
 	}
