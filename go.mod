@@ -17,3 +17,5 @@ require (
 )
 
 go 1.13
+
+replace ./github.com/pingcap/parser => ./github.com/sjjian/parser
