@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bytes"
+
 	"github.com/pingcap/parser/ast"
 )
 
@@ -69,6 +70,12 @@ ScanLoop:
 				delimiter = defaultDelimiter
 				endOffset = l.lastScanOffset
 				break ScanLoop
+			}
+		case invalid:
+			// `Lex`内`scan`在进行token遍历时，当存在一种场景未进行`inc`的操作进行滑动，导致每次遍历同一个pos点位触发死循环。
+			// 对于解析器本身没影响，因为 token 提取失败就退出了，但是我们需要继续遍历。
+			if l.lastScanOffset == l.r.p.Offset {
+				l.r.inc()
 			}
 		}
 	}
