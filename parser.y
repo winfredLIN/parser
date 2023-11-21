@@ -135,6 +135,7 @@ import (
 	from              "FROM"
 	fulltext          "FULLTEXT"
 	generated         "GENERATED"
+	geometryType      "GEOMETRY"
 	grant             "GRANT"
 	group             "GROUP"
 	groups            "GROUPS"
@@ -2742,6 +2743,18 @@ ConstraintElem:
 	{
 		c := &ast.Constraint{
 			Tp:   ast.ConstraintFulltext,
+			Keys: $5.([]*ast.IndexPartSpecification),
+			Name: $3.(string),
+		}
+		if $7 != nil {
+			c.Option = $7.(*ast.IndexOption)
+		}
+		$$ = c
+	}
+|	"SPATIAL" KeyOrIndexOpt IndexName '(' IndexPartSpecificationList ')' IndexOptionList
+	{
+		c := &ast.Constraint{
+			Tp:   ast.ConstraintSpatial,
 			Keys: $5.([]*ast.IndexPartSpecification),
 			Name: $3.(string),
 		}
@@ -6817,7 +6830,14 @@ CastType:
 		x.Collate = charset.CollationBin
 		$$ = x
 	}
-
+|   "GEOMETRY"
+	{
+		x := types.NewFieldType(mysql.TypeGeometry)
+		x.Flag |= mysql.BinaryFlag
+		x.Charset = charset.CharsetBin
+		x.Collate = charset.CollationBin
+		$$ = x
+	}
 PriorityOpt:
 	{
 		$$ = mysql.NoPriority
@@ -10067,6 +10087,14 @@ StringType:
 		if $2.(*ast.OptBinary).IsBinary {
 			x.Flag |= mysql.BinaryFlag
 		}
+		$$ = x
+	}
+|   "GEOMETRY"
+	{
+		x := types.NewFieldType(mysql.TypeGeometry)
+		x.Flag |= mysql.BinaryFlag
+		x.Charset = charset.CharsetBin
+		x.Collate = charset.CollationBin
 		$$ = x
 	}
 
