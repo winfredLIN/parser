@@ -465,3 +465,194 @@ func TestCharset(t *testing.T) {
 		}
 	}
 }
+
+func TestGeometryColumn(t *testing.T) {
+	parser := parser.New()
+	type testCase struct {
+		sql       string
+		formatSQL string
+		noError   bool
+		errMsg    string
+	}
+
+	tc := []testCase{
+		{
+			sql:       `CREATE TABLE t (id INT PRIMARY KEY,g POINT)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g POINT)`,
+			noError:   true,
+		},
+		{
+			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g GEOMETRY)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g GEOMETRY)`,
+			noError:   true,
+		},
+		{
+			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g LINESTRING)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g LINESTRING)`,
+			noError:   true,
+		},
+		{
+			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g POLYGON)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g POLYGON)`,
+			noError:   true,
+		},
+		{
+			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g MULTIPOINT)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g MULTIPOINT)`,
+			noError:   true,
+		},
+		{
+			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g MULTILINESTRING)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g MULTILINESTRING)`,
+			noError:   true,
+		},
+		{
+			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g MULTIPOLYGON)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g MULTIPOLYGON)`,
+			noError:   true,
+		},
+		{
+			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g GEOMETRYCOLLECTION)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g GEOMETRYCOLLECTION)`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g GEOMETRY`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g GEOMETRY`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g POINT`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g POINT`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g LINESTRING`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g LINESTRING`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g POLYGON`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g POLYGON`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g MULTIPOINT`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g MULTIPOINT`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g MULTILINESTRING`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g MULTILINESTRING`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g MULTIPOLYGON`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g MULTIPOLYGON`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g GEOMETRYCOLLECTION`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g GEOMETRYCOLLECTION`,
+			noError:   true,
+		},
+	}
+
+	for _, c := range tc {
+		stmt, err := parser.ParseOneStmt(c.sql, "", "")
+		if err != nil {
+			if c.noError {
+				t.Error(err)
+				continue
+			}
+			if err.Error() != c.errMsg {
+				t.Errorf("expect error message: %s; actual error message: %s", c.errMsg, err.Error())
+				continue
+			}
+			continue
+		} else {
+			if !c.noError {
+				t.Errorf("expect need error, but no error")
+				continue
+			}
+			buf := new(bytes.Buffer)
+			restoreCtx := format.NewRestoreCtx(format.RestoreKeyWordUppercase, buf)
+			err = stmt.Restore(restoreCtx)
+			if nil != err {
+				t.Error(err)
+				continue
+			}
+			if buf.String() != c.formatSQL {
+				t.Errorf("expect sql format: %s; actual sql format: %s", c.formatSQL, buf.String())
+			}
+		}
+	}
+}
+
+func TestIndexConstraint(t *testing.T) {
+	parser := parser.New()
+	type testCase struct {
+		sql             string
+		indexConstraint interface{}
+	}
+	tc := []testCase{
+		{
+			sql:             "CREATE TABLE t (id INT PRIMARY KEY, g POINT, SPATIAL INDEX(g))",
+			indexConstraint: ast.ConstraintSpatial,
+		},
+		{
+			sql:             "ALTER TABLE geom ADD SPATIAL INDEX(g)",
+			indexConstraint: ast.ConstraintSpatial,
+		},
+		{
+			sql:             "CREATE SPATIAL INDEX g ON geom (g)",
+			indexConstraint: ast.IndexKeyTypeSpatial,
+		},
+	}
+
+	for _, c := range tc {
+		isRight := false
+		stmt, err := parser.ParseOneStmt(c.sql, "", "")
+		if err != nil {
+			t.Error(err)
+			continue
+		} else {
+			switch stmt := stmt.(type) {
+			case *ast.CreateTableStmt:
+				indexConstraint, ok := c.indexConstraint.(ast.ConstraintType)
+				if !ok {
+					t.Errorf("sql: %s, indexConstraint is not ConstraintType", c.sql)
+				}
+				for _, constraint := range stmt.Constraints {
+					if constraint.Tp == indexConstraint {
+						isRight = true
+					}
+				}
+			case *ast.AlterTableStmt:
+				indexConstraint, ok := c.indexConstraint.(ast.ConstraintType)
+				if !ok {
+					t.Errorf("sql: %s, indexConstraint is not ConstraintType", c.sql)
+				}
+				for _, spec := range stmt.Specs {
+					if spec.Tp != ast.AlterTableAddConstraint || spec.Constraint == nil {
+						continue
+					}
+					if spec.Constraint.Tp == indexConstraint {
+						isRight = true
+					}
+				}
+			case *ast.CreateIndexStmt:
+				indexKey, ok := c.indexConstraint.(ast.IndexKeyType)
+				if !ok {
+					t.Errorf("sql: %s, indexConstraint is not indexKey", c.sql)
+				}
+				if stmt.KeyType == indexKey {
+					isRight = true
+				}
+			}
+		}
+		if !isRight {
+			t.Errorf("sql: %s, do not get expect indexConstraint: %v", c.sql, c.indexConstraint)
+		}
+	}
+}
