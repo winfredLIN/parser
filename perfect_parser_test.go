@@ -477,8 +477,8 @@ func TestGeometryColumn(t *testing.T) {
 
 	tc := []testCase{
 		{
-			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g POINT)`,
-			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g GEOMETRY)`,
+			sql:       `CREATE TABLE t (id INT PRIMARY KEY,g POINT)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g POINT)`,
 			noError:   true,
 		},
 		{
@@ -488,32 +488,72 @@ func TestGeometryColumn(t *testing.T) {
 		},
 		{
 			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g LINESTRING)`,
-			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g GEOMETRY)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g LINESTRING)`,
 			noError:   true,
 		},
 		{
 			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g POLYGON)`,
-			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g GEOMETRY)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g POLYGON)`,
 			noError:   true,
 		},
 		{
 			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g MULTIPOINT)`,
-			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g GEOMETRY)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g MULTIPOINT)`,
 			noError:   true,
 		},
 		{
 			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g MULTILINESTRING)`,
-			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g GEOMETRY)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g MULTILINESTRING)`,
 			noError:   true,
 		},
 		{
 			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g MULTIPOLYGON)`,
-			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g GEOMETRY)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g MULTIPOLYGON)`,
 			noError:   true,
 		},
 		{
 			sql:       `CREATE TABLE t (id INT PRIMARY KEY, g GEOMETRYCOLLECTION)`,
-			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g GEOMETRY)`,
+			formatSQL: `CREATE TABLE t (id INT PRIMARY KEY,g GEOMETRYCOLLECTION)`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g GEOMETRY`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g GEOMETRY`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g POINT`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g POINT`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g LINESTRING`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g LINESTRING`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g POLYGON`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g POLYGON`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g MULTIPOINT`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g MULTIPOINT`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g MULTILINESTRING`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g MULTILINESTRING`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g MULTIPOLYGON`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g MULTIPOLYGON`,
+			noError:   true,
+		},
+		{
+			sql:       `ALTER TABLE t ADD COLUMN g GEOMETRYCOLLECTION`,
+			formatSQL: `ALTER TABLE t ADD COLUMN g GEOMETRYCOLLECTION`,
 			noError:   true,
 		},
 	}

@@ -724,14 +724,14 @@ var tokenMap = map[string]int{
 	"YEAR":                     yearType,
 	"ZEROFILL":                 zerofill,
 	// geometryType token
-	"POINT":              geometryType,
-	"GEOMETRY":           geometryType,
-	"LINESTRING":         geometryType,
-	"POLYGON":            geometryType,
-	"MULTIPOINT":         geometryType,
-	"MULTILINESTRING":    geometryType,
-	"MULTIPOLYGON":       geometryType,
-	"GEOMETRYCOLLECTION": geometryType,
+	"POINT":              point,
+	"GEOMETRY":           geometry,
+	"LINESTRING":         linestring,
+	"POLYGON":            polygon,
+	"MULTIPOINT":         multipoint,
+	"MULTILINESTRING":    multilinestring,
+	"MULTIPOLYGON":       multipolygon,
+	"GEOMETRYCOLLECTION": geometrycollection,
 }
 
 // See https://dev.mysql.com/doc/refman/5.7/en/function-resolution.html for details
