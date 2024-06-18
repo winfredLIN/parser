@@ -55,7 +55,7 @@ func (d *Delimiter) getNextSql(sqlText string) (*sqlWithLineNumber, error) {
 		return nil, err
 	}
 	// 若匹配到自定义分隔符语法，则输出结果，否则匹配分隔符，输出结果
-	if matched || (d.matchedDelimiter(sqlText) && d.Scanner.lastScanOffset > 0) {
+	if matched || (d.matcheDelimiter(sqlText) && d.Scanner.lastScanOffset > 0) {
 		buff := bytes.Buffer{}
 		buff.WriteString(sqlText[:d.Scanner.lastScanOffset])
 		result := &sqlWithLineNumber{
@@ -123,7 +123,7 @@ func (d *Delimiter) isDelimiterCommand(token string) bool {
 	return strings.ToUpper(token) == DelimiterCommand
 }
 
-// 该函翻译自MySQL Client获取delimiter值的代码，参考：https://github.com/mysql/mysql-server/blob/824e2b4064053f7daf17d7f3f84b7a3ed92e5fb4/client/mysql.cc#L4866
+// 该函数翻译自MySQL Client获取delimiter值的代码，参考：https://github.com/mysql/mysql-server/blob/824e2b4064053f7daf17d7f3f84b7a3ed92e5fb4/client/mysql.cc#L4866
 func getDelimiter(line string) string {
 	ptr := 0
 	start := 0
@@ -173,7 +173,7 @@ func isSpace(c byte) bool {
 	由于scanner会把分隔符扫描为identifier或者其他单字符token类型，因此分为两种情况处理
 	注意，若将SQL关键字定义为分隔符，目前未处理该情况
 */
-func (d *Delimiter) matchedDelimiter(sql string) bool {
+func (d *Delimiter) matcheDelimiter(sql string) bool {
 
 	d.Scanner.reset(sql)
 	d.Scanner.lastScanOffset = 0
