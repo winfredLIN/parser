@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-func TestSplitter(t *testing.T) {
-	s := NewSplitter()
+func TestSplitSqlText(t *testing.T) {
+	d := NewDelimiter()
 	// 读取文件内容
 	testCases := []struct {
 		filePath       string
 		expectedLength int
 	}{
-		{"splitter_test_1.sql", 14},
+		{"splitter_test_1.sql", 9},
 		{"splitter_test_2.sql", 10},
 	}
 	for _, testCase := range testCases {
@@ -21,7 +21,7 @@ func TestSplitter(t *testing.T) {
 		if err != nil {
 			t.Fatalf("无法读取文件: %v", err)
 		}
-		splitResults, _, err := s.SplitSqlText(string(sqls), "", "")
+		splitResults, err := d.SplitSqlText(string(sqls))
 		if err != nil {
 			t.Fatalf(err.Error())
 		}
@@ -29,7 +29,8 @@ func TestSplitter(t *testing.T) {
 			t.FailNow()
 		}
 		for _, result := range splitResults {
-			fmt.Print(result.Text())
+			fmt.Println(result.sql)
+			fmt.Println(result.line)
 			fmt.Print("\n-----------\n")
 		}
 	}
@@ -41,22 +42,23 @@ func TestSplitterProcess(t *testing.T) {
 		filePath       string
 		expectedLength int
 	}{
-		{"splitter_test_1.sql", 9},
+		{"splitter_test_1.sql", 5},
 		{"splitter_test_2.sql", 8},
 	}
 	for _, testCase := range testCases {
 		// 读取文件内容
-		sql, err := os.ReadFile(testCase.filePath)
+		sqlText, err := os.ReadFile(testCase.filePath)
 		if err != nil {
 			t.Fatalf("无法读取文件: %v", err)
 		}
-		splitResults, _, err := s.SplitSqlText(string(sql), "", "")
+		allNodes, err := s.ParseSqlText(string(sqlText))
 		if err != nil {
 			t.Fatalf(err.Error())
 		}
-		executableNodes := s.ProcessToExecutableNodes(splitResults)
+		executableNodes := s.ProcessToExecutableNodes(allNodes)
 		for _, node := range executableNodes {
 			fmt.Println(node.Text())
+			fmt.Println(node.StartLine())
 			fmt.Print("\n-----------\n")
 		}
 		if len(executableNodes) != testCase.expectedLength {

@@ -1,7 +1,9 @@
 package parser
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -28,39 +30,55 @@ func NewDelimiter() *Delimiter {
 	return d
 }
 
-func (d *Delimiter) ScanNextEndOfSql(sql string) (endOffset int, err error) {
-	d.Scanner.reset(sql)
-	d.Scanner.lastScanOffset = 0
-	var token *yySymType = &yySymType{}
-	var tokenType int
-	
-	for d.Scanner.lastScanOffset < len(sql) {
-		// 扫描下一个token
-		tokenType = d.Scanner.Lex(token)
-		// 当token无效且扫描偏移量未变时，增加偏移量
-		if tokenType == invalid && d.Scanner.lastScanOffset == d.Scanner.r.p.Offset {
-			d.Scanner.r.inc()
-			continue
-		}
-		if err := d.detectAndSetCustomDelimiter(token, tokenType); err != nil {
-			return 0, err
-		}
-		if d.matchedDelimiter(token, tokenType) {
-			return d.Scanner.lastScanOffset, nil
-		}
+func (d *Delimiter) SplitSqlText(sqlText string) (results []*sqlWithLineNumber, err error) {
+	result, err := d.getNextSql(sqlText)
+	if err != nil {
+		return nil, err
 	}
+	results = append(results, result)
+	// 递归切分剩余SQL
+	if d.Scanner.lastScanOffset < len(sqlText) {
+		subResults, _ := d.SplitSqlText(sqlText[d.Scanner.lastScanOffset:])
+		results = append(results, subResults...)
+	}
+	return results, nil
+}
 
-	return d.Scanner.lastScanOffset, nil
+type sqlWithLineNumber struct {
+	sql  string
+	line int
+}
+
+func (d *Delimiter) getNextSql(sqlText string) (*sqlWithLineNumber, error) {
+	err := d.detectAndSetCustomDelimiter(sqlText)
+	if err != nil {
+		return nil, err
+	}
+	if d.matchedDelimiter(sqlText) && d.Scanner.lastScanOffset > 0 {
+		buff := bytes.Buffer{}
+		buff.WriteString(sqlText[:d.Scanner.lastScanOffset])
+		result := &sqlWithLineNumber{
+			sql:  strings.TrimSpace(buff.String()),
+			line: -1,
+		}
+		return result, nil
+	}
+	return nil, fmt.Errorf("cannot reslove sql: %v", sql)
 }
 
 /*
-该方法检测自定义分隔符语法并更新分隔符:
+该方法检测sql文本开头是否是自定义分隔符语法，若是匹配并更新分隔符:
 
  1. 分隔符语法满足：delimiter str 或者 \d str
  2. 参考链接：https://dev.mysql.com/doc/refman/5.7/en/mysql-commands.html
 */
-func (d *Delimiter) detectAndSetCustomDelimiter(token *yySymType, tokenType int) error {
-	switch tokenType {
+func (d *Delimiter) detectAndSetCustomDelimiter(sql string) error {
+	// reset scanner
+	token := &yySymType{}
+	d.Scanner.reset(sql)
+	d.Scanner.lastScanOffset = 0
+
+	switch d.Scanner.Lex(token) {
 	case BackSlash:
 		// 如果token是反斜杠，尝试匹配简短分隔符命令，并设置自定义分隔符
 		if matched, customDelimiter := matchDelimiterCommandSort(d.Scanner.r.s); matched {
@@ -214,23 +232,38 @@ func (d *Delimiter) delimiter() string {
 	由于scanner会把分隔符扫描为identifier或者其他单字符token类型，因此分为两种情况处理
 	注意，若将SQL关键字定义为分隔符，目前未处理该情况
 */
-func (d *Delimiter) matchedDelimiter(token *yySymType, tokenType int) bool {
-	switch tokenType {
-	case identifier:
-		// 当token是当前分隔符时，更新扫描偏移量并返回true
-		if strings.Contains(token.ident, d.delimiter()) {
-			d.Scanner.lastScanOffset += len(d.delimiter()) + strings.Index(token.ident, d.DelimiterStr)
-			return true
-		}
-	case d.firstAsciiValueOfDelimiter():
-		// 检查当前扫描位置是否匹配当前分隔符的第一个字符
-		expectedEnd := d.Scanner.lastScanOffset + len(d.delimiter())
-		if expectedEnd >= len(d.Scanner.r.s) {
-			return false
-		}
-		if d.Scanner.r.s[d.Scanner.lastScanOffset:expectedEnd] == d.delimiter() {
-			d.Scanner.lastScanOffset = expectedEnd
-			return true
+func (d *Delimiter) matchedDelimiter(sql string) bool {
+
+	d.Scanner.reset(sql)
+	d.Scanner.lastScanOffset = 0
+	token := &yySymType{}
+
+	for d.Scanner.lastScanOffset < len(sql) {
+		// 扫描下一个token
+		tokenType := d.Scanner.Lex(token)
+
+		switch tokenType {
+		case identifier:
+			// 当token是当前分隔符时，更新扫描偏移量并返回true
+			if strings.Contains(token.ident, d.delimiter()) {
+				d.Scanner.lastScanOffset += len(d.delimiter()) + strings.Index(token.ident, d.DelimiterStr)
+				return true
+			}
+		case d.firstAsciiValueOfDelimiter():
+			// 检查当前扫描位置是否匹配当前分隔符的第一个字符
+			expectedEnd := d.Scanner.lastScanOffset + len(d.delimiter())
+			if expectedEnd > len(d.Scanner.r.s) {
+				return false
+			}
+			if d.Scanner.r.s[d.Scanner.lastScanOffset:expectedEnd] == d.delimiter() {
+				d.Scanner.lastScanOffset = expectedEnd
+				return true
+			}
+		case invalid:
+			// 当token无效且扫描偏移量未变时，增加偏移量
+			if d.Scanner.lastScanOffset == d.Scanner.r.p.Offset {
+				d.Scanner.r.inc()
+			}
 		}
 	}
 	return false
