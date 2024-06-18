@@ -30,9 +30,10 @@ func NewDelimiter() *Delimiter {
 
 func (d *Delimiter) ScanNextEndOfSql(sql string) (endOffset int, err error) {
 	d.Scanner.reset(sql)
+	d.Scanner.lastScanOffset = 0
 	var token *yySymType = &yySymType{}
 	var tokenType int
-
+	
 	for d.Scanner.lastScanOffset < len(sql) {
 		// 扫描下一个token
 		tokenType = d.Scanner.Lex(token)
