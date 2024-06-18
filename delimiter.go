@@ -50,11 +50,12 @@ type sqlWithLineNumber struct {
 }
 
 func (d *Delimiter) getNextSql(sqlText string) (*sqlWithLineNumber, error) {
-	err := d.detectAndSetCustomDelimiter(sqlText)
+	matched, err := d.matchAndSetCustomDelimiter(sqlText)
 	if err != nil {
 		return nil, err
 	}
-	if d.matchedDelimiter(sqlText) && d.Scanner.lastScanOffset > 0 {
+	// 若匹配到自定义分隔符语法，则输出结果，否则匹配分隔符，输出结果
+	if matched || (d.matchedDelimiter(sqlText) && d.Scanner.lastScanOffset > 0) {
 		buff := bytes.Buffer{}
 		buff.WriteString(sqlText[:d.Scanner.lastScanOffset])
 		result := &sqlWithLineNumber{
@@ -72,74 +73,148 @@ func (d *Delimiter) getNextSql(sqlText string) (*sqlWithLineNumber, error) {
  1. 分隔符语法满足：delimiter str 或者 \d str
  2. 参考链接：https://dev.mysql.com/doc/refman/5.7/en/mysql-commands.html
 */
-func (d *Delimiter) detectAndSetCustomDelimiter(sql string) error {
-	// reset scanner
+func (d *Delimiter) matchAndSetCustomDelimiter(sql string) (bool, error) {
+	// 重置扫描器
 	token := &yySymType{}
 	d.Scanner.reset(sql)
 	d.Scanner.lastScanOffset = 0
 
+	var sqlAfterDelimiter string
+
 	switch d.Scanner.Lex(token) {
 	case BackSlash:
-		// 如果token是反斜杠，尝试匹配简短分隔符命令，并设置自定义分隔符
-		if matched, customDelimiter := matchDelimiterCommandSort(d.Scanner.r.s); matched {
-			if err := d.setDelimiter(customDelimiter); err != nil {
-				return err
-			}
+		if d.isSortDelimiterCommand(sql) {
+			sqlAfterDelimiter = sql[d.Scanner.lastScanOffset+2:] // \d的长度是2字节
+			d.Scanner.lastScanOffset += 2
 		}
 	case identifier:
-		// 如果token是DELIMITER，尝试匹配常规分隔符命令，并设置自定义分隔符
-		if strings.ToUpper(token.ident) == DelimiterCommand {
-			if matched, customDelimiter := matchDelimiterCommand(d.Scanner.r.s); matched {
-				if err := d.setDelimiter(customDelimiter); err != nil {
-					return err
-				}
+		if d.isDelimiterCommand(token.ident) {
+			sqlAfterDelimiter = sql[d.Scanner.lastScanOffset+9:] //DELIMITER的长度是9字节
+			d.Scanner.lastScanOffset += 9
+		}
+	default:
+		return false, nil
+	}
+	// 处理自定义分隔符
+	if sqlAfterDelimiter != "" {
+		end := strings.Index(sqlAfterDelimiter, "\n")
+		if end == -1 {
+			end = len(sqlAfterDelimiter)
+		}
+		newDelimiter := getDelimiter(sqlAfterDelimiter[:end])
+		if err := d.setDelimiter(newDelimiter); err != nil {
+			return false, err
+		}
+		// 若识别到分隔符，则这一整行都为定义分隔符的sql，
+		// 例如 delimiter ;; xx 其中;;为分隔符，而xx不产生任何影响，但属于这条语句
+		d.Scanner.lastScanOffset += end
+		return true, nil
+	}
+	return false, nil
+}
+
+// \\d会被识别为三个token \ \ d 不能使用Lex，Lex可能会跳过空格和注释，因此这里使用字符串匹配
+func (d *Delimiter) isSortDelimiterCommand(sql string) bool {
+	return d.Scanner.lastScanOffset+2 < len(sql) && sql[d.Scanner.lastScanOffset+1] == 'd'
+}
+
+// DELIMITER会被识别为identifier，因此这里仅需识别其值是否相等
+func (d *Delimiter) isDelimiterCommand(token string) bool {
+	return strings.ToUpper(token) == DelimiterCommand
+}
+
+// 该函翻译自MySQL Client获取delimiter值的代码，参考：https://github.com/mysql/mysql-server/blob/824e2b4064053f7daf17d7f3f84b7a3ed92e5fb4/client/mysql.cc#L4866
+func getDelimiter(line string) string {
+	ptr := 0
+	start := 0
+	quoted := false
+	qtype := byte(0)
+
+	// 跳过开头的空格
+	for ptr < len(line) && isSpace(line[ptr]) {
+		ptr++
+	}
+
+	if ptr == len(line) {
+		return ""
+	}
+
+	// 检查是否为引号字符串
+	if line[ptr] == '\'' || line[ptr] == '"' || line[ptr] == '`' {
+		qtype = line[ptr]
+		quoted = true
+		ptr++
+	}
+
+	start = ptr
+
+	// 找到字符串结尾
+	for ptr < len(line) {
+		if !quoted && line[ptr] == '\\' && ptr+1 < len(line) { // 跳过转义字符
+			ptr += 2
+		} else if (!quoted && isSpace(line[ptr])) || (quoted && line[ptr] == qtype) {
+			break
+		} else {
+			ptr++
+		}
+	}
+
+	return line[start:ptr]
+}
+
+// 辅助函数,判断字符是否为空格
+func isSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+/*
+该方法检测分隔符：
+
+	由于scanner会把分隔符扫描为identifier或者其他单字符token类型，因此分为两种情况处理
+	注意，若将SQL关键字定义为分隔符，目前未处理该情况
+*/
+func (d *Delimiter) matchedDelimiter(sql string) bool {
+
+	d.Scanner.reset(sql)
+	d.Scanner.lastScanOffset = 0
+	token := &yySymType{}
+
+	for d.Scanner.lastScanOffset < len(sql) {
+		// 扫描下一个token
+		tokenType := d.Scanner.Lex(token)
+
+		switch tokenType {
+		case identifier:
+			// 当token是当前分隔符时，更新扫描偏移量并返回true
+			if strings.Contains(token.ident, d.delimiter()) {
+				d.Scanner.lastScanOffset += len(d.delimiter()) + strings.Index(token.ident, d.DelimiterStr)
+				return true
+			}
+		case d.firstAsciiValueOfDelimiter():
+			// 检查当前扫描位置是否匹配当前分隔符的第一个字符
+			expectedEnd := d.Scanner.lastScanOffset + len(d.delimiter())
+			if expectedEnd > len(d.Scanner.r.s) {
+				return false
+			}
+			if d.Scanner.r.s[d.Scanner.lastScanOffset:expectedEnd] == d.delimiter() {
+				d.Scanner.lastScanOffset = expectedEnd
+				return true
+			}
+		case invalid:
+			// 当token无效且扫描偏移量未变时，增加偏移量
+			if d.Scanner.lastScanOffset == d.Scanner.r.p.Offset {
+				d.Scanner.r.inc()
 			}
 		}
 	}
-	return nil
+	return false
 }
 
-// 匹配分隔符定义语法 DELIMITER str
-func matchDelimiterCommand(input string) (isMached bool, delimiter string) {
-	/*
-		1. (?i) 表示无视大小写
-		2. \s* 匹配任意数量的空白字符(空格、制表符、换行符等)
-		3. DELIMITER 用于匹配字符串DELIMITER，即定义分隔符的常规语法
-		4. \x20+ 表示匹配1至多个空格
-		5. (\S+)：这是一个捕获组。\S匹配任意非空白字符，+表示匹配前面的模式一次或多次
-	*/
-	re := regexp.MustCompile(`(?i)\s*DELIMITER\x20+` + `((?:"(.*)"|'(.*)'|` + "`(.*)`" + `))`)
-	matches := re.FindStringSubmatch(input)
-	if len(matches) > 1 {
-		return true, matches[1]
+func (d *Delimiter) firstAsciiValueOfDelimiter() int {
+	if len(d.DelimiterBytes) > 0 {
+		return int(d.DelimiterBytes[0])
 	}
-	re = regexp.MustCompile(`(?i)\s*DELIMITER\x20+(\S+)`)
-	matches = re.FindStringSubmatch(input)
-	if len(matches) > 1 {
-		return true, matches[1]
-	}
-	return false, ""
-}
-
-// 匹配分隔符定义语法 \d str
-func matchDelimiterCommandSort(input string) (isMached bool, delimiter string) {
-	/*
-		1. \s*：匹配任意数量的空白字符(空格、制表符、换行符等)
-		2. regexp.QuoteMeta("\\d") 用于匹配字符串\d，即定义分隔符的简短语法
-		3. \x20+ 表示匹配1至多个空格
-		4. (\S+)：这是一个捕获组。\S匹配任意非空白字符，+表示匹配前面的模式一次或多次
-	*/
-	re := regexp.MustCompile(`\s*` + regexp.QuoteMeta(DelimiterCommandSort) + `\x20+` + `((?:"(.*)"|'(.*)'|` + "`(.*)`" + `))`)
-	matches := re.FindStringSubmatch(input)
-	if len(matches) > 1 {
-		return true, matches[1]
-	}
-	re = regexp.MustCompile(`\s*` + regexp.QuoteMeta(DelimiterCommandSort) + `\x20+(\S+)`)
-	matches = re.FindStringSubmatch(input)
-	if len(matches) > 1 {
-		return true, matches[1]
-	}
-	return false, ""
+	return -1
 }
 
 var ErrDelimiterIsCommentStyle = errors.New("please do not use c-style comment as delimiter")
@@ -224,54 +299,4 @@ func isReservedKeyWord(input string) bool {
 
 func (d *Delimiter) delimiter() string {
 	return d.DelimiterStr
-}
-
-/*
-该方法检测分隔符：
-
-	由于scanner会把分隔符扫描为identifier或者其他单字符token类型，因此分为两种情况处理
-	注意，若将SQL关键字定义为分隔符，目前未处理该情况
-*/
-func (d *Delimiter) matchedDelimiter(sql string) bool {
-
-	d.Scanner.reset(sql)
-	d.Scanner.lastScanOffset = 0
-	token := &yySymType{}
-
-	for d.Scanner.lastScanOffset < len(sql) {
-		// 扫描下一个token
-		tokenType := d.Scanner.Lex(token)
-
-		switch tokenType {
-		case identifier:
-			// 当token是当前分隔符时，更新扫描偏移量并返回true
-			if strings.Contains(token.ident, d.delimiter()) {
-				d.Scanner.lastScanOffset += len(d.delimiter()) + strings.Index(token.ident, d.DelimiterStr)
-				return true
-			}
-		case d.firstAsciiValueOfDelimiter():
-			// 检查当前扫描位置是否匹配当前分隔符的第一个字符
-			expectedEnd := d.Scanner.lastScanOffset + len(d.delimiter())
-			if expectedEnd > len(d.Scanner.r.s) {
-				return false
-			}
-			if d.Scanner.r.s[d.Scanner.lastScanOffset:expectedEnd] == d.delimiter() {
-				d.Scanner.lastScanOffset = expectedEnd
-				return true
-			}
-		case invalid:
-			// 当token无效且扫描偏移量未变时，增加偏移量
-			if d.Scanner.lastScanOffset == d.Scanner.r.p.Offset {
-				d.Scanner.r.inc()
-			}
-		}
-	}
-	return false
-}
-
-func (d *Delimiter) firstAsciiValueOfDelimiter() int {
-	if len(d.DelimiterBytes) > 0 {
-		return int(d.DelimiterBytes[0])
-	}
-	return -1
 }
