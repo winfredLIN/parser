@@ -14,6 +14,7 @@ func TestSplitter(t *testing.T) {
 		expectedLength int
 	}{
 		{"splitter_test_1.sql", 14},
+		{"splitter_test_2.sql", 10},
 	}
 	for _, testCase := range testCases {
 		sqls, err := os.ReadFile(testCase.filePath)
@@ -41,6 +42,7 @@ func TestSplitterProcess(t *testing.T) {
 		expectedLength int
 	}{
 		{"splitter_test_1.sql", 9},
+		{"splitter_test_2.sql", 8},
 	}
 	for _, testCase := range testCases {
 		// 读取文件内容
