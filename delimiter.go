@@ -21,16 +21,24 @@ type Delimiter struct {
 	Scanner        *Scanner
 	DelimiterStr   string
 	DelimiterBytes []byte
+	line           int
+	startPos       int
 }
 
 func NewDelimiter() *Delimiter {
 	d := &Delimiter{}
-	d.setDelimiter(DefaultDelimiterString)
 	d.Scanner = NewScanner("")
 	return d
 }
 
 func (d *Delimiter) SplitSqlText(sqlText string) (results []*sqlWithLineNumber, err error) {
+	d.line = 0
+	d.startPos = 0
+	d.setDelimiter(DefaultDelimiterString)
+	return d.splitSqlText(sqlText)
+}
+
+func (d *Delimiter) splitSqlText(sqlText string) (results []*sqlWithLineNumber, err error) {
 	result, err := d.getNextSql(sqlText)
 	if err != nil {
 		return nil, err
@@ -38,7 +46,7 @@ func (d *Delimiter) SplitSqlText(sqlText string) (results []*sqlWithLineNumber, 
 	results = append(results, result)
 	// 递归切分剩余SQL
 	if d.Scanner.lastScanOffset < len(sqlText) {
-		subResults, _ := d.SplitSqlText(sqlText[d.Scanner.lastScanOffset:])
+		subResults, _ := d.splitSqlText(sqlText[d.Scanner.lastScanOffset:])
 		results = append(results, subResults...)
 	}
 	return results, nil
@@ -58,10 +66,12 @@ func (d *Delimiter) getNextSql(sqlText string) (*sqlWithLineNumber, error) {
 	if matched || (d.matcheDelimiter(sqlText) && d.Scanner.lastScanOffset > 0) {
 		buff := bytes.Buffer{}
 		buff.WriteString(sqlText[:d.Scanner.lastScanOffset])
+		lineBeforeStart := strings.Count(sqlText[:d.startPos], "\n")
 		result := &sqlWithLineNumber{
 			sql:  strings.TrimSpace(buff.String()),
-			line: -1,
+			line: d.line + lineBeforeStart + 1,
 		}
+		d.line += d.Scanner.r.pos().Line - 1 // 表示的是该SQL中有多少换行
 		return result, nil
 	}
 	return nil, fmt.Errorf("cannot reslove sql: %v", sql)
@@ -85,11 +95,13 @@ func (d *Delimiter) matchAndSetCustomDelimiter(sql string) (bool, error) {
 	case BackSlash:
 		if d.isSortDelimiterCommand(sql) {
 			sqlAfterDelimiter = sql[d.Scanner.lastScanOffset+2:] // \d的长度是2字节
+			d.startPos = d.Scanner.lastScanOffset
 			d.Scanner.lastScanOffset += 2
 		}
 	case identifier:
 		if d.isDelimiterCommand(token.ident) {
 			sqlAfterDelimiter = sql[d.Scanner.lastScanOffset+9:] //DELIMITER的长度是9字节
+			d.startPos = d.Scanner.lastScanOffset
 			d.Scanner.lastScanOffset += 9
 		}
 	default:
@@ -178,33 +190,37 @@ func (d *Delimiter) matcheDelimiter(sql string) bool {
 	d.Scanner.reset(sql)
 	d.Scanner.lastScanOffset = 0
 	token := &yySymType{}
+	var isFirstToken bool = true
 
 	for d.Scanner.lastScanOffset < len(sql) {
-		// 扫描下一个token
 		tokenType := d.Scanner.Lex(token)
+		if isFirstToken {
+			d.startPos = d.Scanner.lastScanOffset
+			isFirstToken = false
+		}
+		if d.isTokenMatchDelimiter(tokenType, token) {
+			return true
+		}
+	}
+	return false
+}
 
-		switch tokenType {
-		case identifier:
-			// 当token是当前分隔符时，更新扫描偏移量并返回true
-			if strings.Contains(token.ident, d.delimiter()) {
-				d.Scanner.lastScanOffset += len(d.delimiter()) + strings.Index(token.ident, d.DelimiterStr)
-				return true
-			}
-		case d.firstAsciiValueOfDelimiter():
-			// 检查当前扫描位置是否匹配当前分隔符的第一个字符
-			expectedEnd := d.Scanner.lastScanOffset + len(d.delimiter())
-			if expectedEnd > len(d.Scanner.r.s) {
-				return false
-			}
-			if d.Scanner.r.s[d.Scanner.lastScanOffset:expectedEnd] == d.delimiter() {
-				d.Scanner.lastScanOffset = expectedEnd
-				return true
-			}
-		case invalid:
-			// 当token无效且扫描偏移量未变时，增加偏移量
-			if d.Scanner.lastScanOffset == d.Scanner.r.p.Offset {
-				d.Scanner.r.inc()
-			}
+func (d *Delimiter) isTokenMatchDelimiter(tokenType int, token *yySymType) bool {
+	switch tokenType {
+	case identifier:
+		if strings.Contains(token.ident, d.delimiter()) {
+			d.Scanner.lastScanOffset += strings.Index(token.ident, d.delimiter()) + len(d.delimiter())
+			return true
+		}
+	case d.firstAsciiValueOfDelimiter():
+		expectedEnd := d.Scanner.lastScanOffset + len(d.delimiter())
+		if expectedEnd <= len(d.Scanner.r.s) && d.Scanner.r.s[d.Scanner.lastScanOffset:expectedEnd] == d.delimiter() {
+			d.Scanner.lastScanOffset = expectedEnd
+			return true
+		}
+	case invalid:
+		if d.Scanner.lastScanOffset == d.Scanner.r.p.Offset {
+			d.Scanner.r.inc()
 		}
 	}
 	return false
