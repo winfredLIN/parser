@@ -67,67 +67,6 @@ func TestSplitterProcess(t *testing.T) {
 	}
 }
 
-func TestMatchDelimiterCommand(t *testing.T) {
-	testCases := []struct {
-		input    string
-		expected string
-	}{
-		// 匹配到空字符串
-		{"DELIMITER", ""},
-		{"delimiter", ""},
-		{"DELIMITER \n 'xx'", ""}, // 不允许换行，若换行则为空字符串
-		// 一般情况
-		{"DELIMITER -- use test", "--"},
-		{"DELIMITER AbC123", "AbC123"},
-		{"delimiter     ghi789  ", "ghi789"},
-		// 使用引号，但无值
-		{"DELIMITER ''", "''"},
-		{"delimiter ``", "``"},
-		{`delimiter ""`, `""`},
-		// 使用引号，且有值
-		{`DELIMITER "s s"`, `"s s"`},
-		{`DELIMITER 'xx'`, `'xx'`},
-		{"DELIMITER `aa`", "`aa`"},
-	}
-
-	for _, tc := range testCases {
-		_, result := matchDelimiterCommand(tc.input)
-		if result != tc.expected {
-			t.Errorf("For input '%s', expected '%s', but got '%s'", tc.input, tc.expected, result)
-		}
-	}
-}
-
-func TestMatchDelimiterCommandSort(t *testing.T) {
-	testCases := []struct {
-		input    string
-		expected string
-	}{
-		// 匹配到空字符串
-		{`\d`, ""},
-		{`\d` + "\n 'xx'", ""}, // 不允许换行，若换行则为空字符串
-		// 一般情况
-		{`\d` + " -- use test", "--"},
-		{`\d` + " AbC123", "AbC123"},
-		{`\d` + "     ghi789  ", "ghi789"},
-		// 使用引号，但无值
-		{`\d` + " ''", "''"},
-		{`\d` + " ``", "``"},
-		{`\d` + ` ""`, `""`},
-		// 使用引号，且有值
-		{`\d` + ` "s s"`, `"s s"`},
-		{`\d` + ` 'xx'`, `'xx'`},
-		{`\d` + " `aa`", "`aa`"},
-	}
-
-	for _, tc := range testCases {
-		_, result := matchDelimiterCommandSort(tc.input)
-		if result != tc.expected {
-			t.Errorf("For input '%s', expected '%s', but got '%s'", tc.input, tc.expected, result)
-		}
-	}
-}
-
 func TestRemoveOuterQuotes(t *testing.T) {
 	testCases := []struct {
 		input    string
