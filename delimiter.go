@@ -205,17 +205,19 @@ func (d *Delimiter) matcheDelimiter(sql string) bool {
 	return false
 }
 
+
 func (d *Delimiter) isTokenMatchDelimiter(tokenType int, token *yySymType) bool {
 	switch tokenType {
 	case identifier:
-		if strings.Contains(token.ident, d.delimiter()) {
-			d.Scanner.lastScanOffset += strings.Index(token.ident, d.delimiter()) + len(d.delimiter())
+		if d.isIdentifierContainDelimiter(token) {
+			// 将扫描位置向后移动，移动长度等于分隔符的长度加上分隔符在该字符的位置，即将游标移动到分隔符的最后一个字符
+			d.Scanner.lastScanOffset += (strings.Index(token.ident, d.delimiter()) + len(d.delimiter()))
 			return true
 		}
 	case d.firstAsciiValueOfDelimiter():
-		expectedEnd := d.Scanner.lastScanOffset + len(d.delimiter())
-		if expectedEnd <= len(d.Scanner.r.s) && d.Scanner.r.s[d.Scanner.lastScanOffset:expectedEnd] == d.delimiter() {
-			d.Scanner.lastScanOffset = expectedEnd
+		if d.isAsciiValueTheBeginningOfDelimiter() {
+			// 将扫描位置向后移动，移动长度等于分隔符的长度，即将游标移动到分隔符的最后一个字符
+			d.Scanner.lastScanOffset = d.Scanner.lastScanOffset + len(d.delimiter())
 			return true
 		}
 	case invalid:
@@ -226,11 +228,39 @@ func (d *Delimiter) isTokenMatchDelimiter(tokenType int, token *yySymType) bool 
 	return false
 }
 
+const (
+	Quotes       byte = '\''
+	DoubleQuotes byte = '"'
+	BackQuotes   byte = '`'
+)
+
+
+func (d *Delimiter) isIdentifierContainDelimiter(token *yySymType) bool {
+	if !strings.Contains(token.ident, d.delimiter()) {
+		return false
+	}
+	// 排除由引号包围的identifier
+	if len(d.Scanner.r.s) >= d.Scanner.lastScanOffset+len(d.delimiter())+1 {
+		left := d.Scanner.r.s[d.Scanner.lastScanOffset]
+		if left == Quotes || left == DoubleQuotes || left == BackQuotes {
+			if left == d.Scanner.r.s[d.Scanner.lastScanOffset+len(token.ident)+1] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (d *Delimiter) firstAsciiValueOfDelimiter() int {
 	if len(d.DelimiterBytes) > 0 {
 		return int(d.DelimiterBytes[0])
 	}
 	return -1
+}
+
+func (d *Delimiter) isAsciiValueTheBeginningOfDelimiter() bool {
+	expectedEnd := d.Scanner.lastScanOffset + len(d.delimiter())
+	return expectedEnd <= len(d.Scanner.r.s) && d.Scanner.r.s[d.Scanner.lastScanOffset:expectedEnd] == d.delimiter()
 }
 
 var ErrDelimiterIsCommentStyle = errors.New("please do not use c-style comment as delimiter")
