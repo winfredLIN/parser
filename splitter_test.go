@@ -51,11 +51,10 @@ func TestSplitterProcess(t *testing.T) {
 		if err != nil {
 			t.Fatalf("无法读取文件: %v", err)
 		}
-		allNodes, err := s.ParseSqlText(string(sqlText))
+		executableNodes, err := s.ParseSqlText(string(sqlText))
 		if err != nil {
 			t.Fatalf(err.Error())
 		}
-		executableNodes := s.ProcessToExecutableNodes(allNodes)
 		for _, node := range executableNodes {
 			fmt.Print("\n------------------------------\n")
 			fmt.Printf("SQL语句在第%v行\n", node.StartLine())
