@@ -3,7 +3,6 @@ package parser
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -74,7 +73,10 @@ func (d *Delimiter) getNextSql(sqlText string) (*sqlWithLineNumber, error) {
 		d.line += d.Scanner.r.pos().Line - 1 // 表示的是该SQL中有多少换行
 		return result, nil
 	}
-	return nil, fmt.Errorf("cannot reslove sql: %v", sql)
+	return &sqlWithLineNumber{
+		sql:  strings.TrimSpace(sqlText),
+		line: d.line + strings.Count(sqlText[:d.startPos], "\n") + 1,
+	}, nil
 }
 
 /*
@@ -205,7 +207,6 @@ func (d *Delimiter) matcheDelimiter(sql string) bool {
 	return false
 }
 
-
 func (d *Delimiter) isTokenMatchDelimiter(tokenType int, token *yySymType) bool {
 	switch tokenType {
 	case identifier:
@@ -233,7 +234,6 @@ const (
 	DoubleQuotes byte = '"'
 	BackQuotes   byte = '`'
 )
-
 
 func (d *Delimiter) isIdentifierContainDelimiter(token *yySymType) bool {
 	if !strings.Contains(token.ident, d.delimiter()) {
