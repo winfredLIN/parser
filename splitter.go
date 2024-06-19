@@ -59,7 +59,7 @@ func (s *splitter) ProcessToExecutableNodes(results []ast.StmtNode) []ast.StmtNo
 		if trimmedSQL == "" {
 			continue
 		}
-		node.SetText(trimmedSQL)
+		node.SetText(trimmedSQL + ";")
 		executableNodes = append(executableNodes, node)
 	}
 
