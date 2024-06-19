@@ -13,8 +13,8 @@ func TestSplitSqlText(t *testing.T) {
 		filePath       string
 		expectedLength int
 	}{
-		{"splitter_test_1.sql", 9},
-		{"splitter_test_2.sql", 10},
+		{"splitter_test_1.sql", 20},
+		{"splitter_test_2.sql", 20},
 	}
 	for _, testCase := range testCases {
 		sqls, err := os.ReadFile(testCase.filePath)
@@ -29,9 +29,9 @@ func TestSplitSqlText(t *testing.T) {
 			t.FailNow()
 		}
 		for _, result := range splitResults {
-			fmt.Println(result.sql)
-			fmt.Println(result.line)
-			fmt.Print("\n-----------\n")
+			fmt.Print("\n------------------------------\n")
+			fmt.Printf("SQL语句在第%v行\n", result.line)
+			fmt.Printf("SQL语句为:\n%v", result.sql)
 		}
 	}
 }
@@ -42,8 +42,8 @@ func TestSplitterProcess(t *testing.T) {
 		filePath       string
 		expectedLength int
 	}{
-		{"splitter_test_1.sql", 5},
-		{"splitter_test_2.sql", 8},
+		{"splitter_test_1.sql", 14},
+		{"splitter_test_2.sql", 14},
 	}
 	for _, testCase := range testCases {
 		// 读取文件内容
@@ -57,9 +57,9 @@ func TestSplitterProcess(t *testing.T) {
 		}
 		executableNodes := s.ProcessToExecutableNodes(allNodes)
 		for _, node := range executableNodes {
-			fmt.Println(node.Text())
-			fmt.Println(node.StartLine())
-			fmt.Print("\n-----------\n")
+			fmt.Print("\n------------------------------\n")
+			fmt.Printf("SQL语句在第%v行\n", node.StartLine())
+			fmt.Printf("SQL语句为:\n%v", node.Text())
 		}
 		if len(executableNodes) != testCase.expectedLength {
 			t.FailNow()
