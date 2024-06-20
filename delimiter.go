@@ -219,15 +219,16 @@ func (d *Delimiter) isTokenMatchDelimiter(tokenType int, token *yySymType) bool 
 					1. 当分隔符第一个token值与stringLit的token值不等，那么一定不是分隔符，则跳过
 					2. 当分隔符第一个token值与stringLit的token值相等， 如："'abc'd" '"abc"d'会因为字符串不匹配而跳过
 		*/
+		// 1. 当分隔符第一个token值与stringLit的token值不等，那么一定不是分隔符，则跳过
 		if tokenType == stringLit && token.ident != d.FirstTokenValueOfDelimiter {
 			return false
 		}
-		// 1. 定位特征的第一个字符所处的位置
+		// 2. 定位特征的第一个字符所处的位置
 		indexIntoken := strings.Index(token.ident, d.FirstTokenValueOfDelimiter)
 		if indexIntoken == -1 {
 			return false
 		}
-		// 2. 字符串匹配
+		// 3. 字符串匹配
 		begin := d.Scanner.lastScanOffset + indexIntoken
 		end := begin + len(d.DelimiterStr)
 		if begin < 0 || end > len(d.Scanner.r.s) {
