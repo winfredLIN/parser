@@ -3,7 +3,6 @@ package parser
 import (
 	"bytes"
 	"errors"
-	"regexp"
 	"strings"
 )
 
@@ -17,11 +16,12 @@ const (
 )
 
 type Delimiter struct {
-	Scanner        *Scanner
-	DelimiterStr   string
-	DelimiterBytes []byte
-	line           int
-	startPos       int
+	Scanner                    *Scanner
+	FirstTokenTypeOfDelimiter  int
+	FirstTokenValueOfDelimiter string
+	DelimiterStr               string
+	line                       int
+	startPos                   int
 }
 
 func NewDelimiter() *Delimiter {
@@ -209,18 +209,37 @@ func (d *Delimiter) matcheDelimiter(sql string) bool {
 
 func (d *Delimiter) isTokenMatchDelimiter(tokenType int, token *yySymType) bool {
 	switch tokenType {
-	case identifier:
-		if d.isIdentifierContainDelimiter(token) {
-			// 将扫描位置向后移动，移动长度等于分隔符的长度加上分隔符在该字符的位置，即将游标移动到分隔符的最后一个字符
-			d.Scanner.lastScanOffset += (strings.Index(token.ident, d.delimiter()) + len(d.delimiter()))
-			return true
+	case d.FirstTokenTypeOfDelimiter:
+		/*
+			在mysql client的语法中需要跳过注释以及分隔符处于引号中的情况，由于scanner.Lex会自动跳过注释，因此，仅需要判断分隔符处于引号中的情况。对于该方法，以分隔符的第一个token作为特征仅需匹配，可能会匹配到由引号括起的情况，存在stringLit和identifier两种token需要进一步判断：
+				1. 当匹配到identifier时，identifier有可能由反引号括起:
+					1. 若identifier没有反引号括起，则不需要判断是否跳过
+					2. 若identifier被反引号括起，匹配的字符串会带上反引号，能在匹配字符串时能够检查出是否需要跳过
+				2. 当匹配到stringLit时，stringLit一定是由单引号或双引号括起:
+					1. 当分隔符第一个token值与stringLit的token值不等，那么一定不是分隔符，则跳过
+					2. 当分隔符第一个token值与stringLit的token值相等， 如："'abc'd" '"abc"d'会因为字符串不匹配而跳过
+		*/
+		if tokenType == stringLit && token.ident != d.FirstTokenValueOfDelimiter {
+			return false
 		}
-	case d.firstAsciiValueOfDelimiter():
-		if d.isAsciiValueTheBeginningOfDelimiter() {
-			// 将扫描位置向后移动，移动长度等于分隔符的长度，即将游标移动到分隔符的最后一个字符
-			d.Scanner.lastScanOffset = d.Scanner.lastScanOffset + len(d.delimiter())
-			return true
+		// 1. 定位特征的第一个字符所处的位置
+		indexIntoken := strings.Index(token.ident, d.FirstTokenValueOfDelimiter)
+		if indexIntoken == -1 {
+			return false
 		}
+		// 2. 字符串匹配
+		begin := d.Scanner.lastScanOffset + indexIntoken
+		end := begin + len(d.DelimiterStr)
+		if begin < 0 || end > len(d.Scanner.r.s) {
+			return false
+		}
+		expected := d.Scanner.r.s[begin:end]
+		if expected != d.DelimiterStr {
+			return false
+		}
+		d.Scanner.lastScanOffset = end
+		return true
+
 	case invalid:
 		if d.Scanner.lastScanOffset == d.Scanner.r.p.Offset {
 			d.Scanner.r.inc()
@@ -235,35 +254,7 @@ const (
 	BackQuotes   byte = '`'
 )
 
-func (d *Delimiter) isIdentifierContainDelimiter(token *yySymType) bool {
-	if !strings.Contains(token.ident, d.delimiter()) {
-		return false
-	}
-	// 排除由引号包围的identifier
-	if len(d.Scanner.r.s) >= d.Scanner.lastScanOffset+len(d.delimiter())+1 {
-		left := d.Scanner.r.s[d.Scanner.lastScanOffset]
-		if left == Quotes || left == DoubleQuotes || left == BackQuotes {
-			if left == d.Scanner.r.s[d.Scanner.lastScanOffset+len(token.ident)+1] {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func (d *Delimiter) firstAsciiValueOfDelimiter() int {
-	if len(d.DelimiterBytes) > 0 {
-		return int(d.DelimiterBytes[0])
-	}
-	return -1
-}
-
-func (d *Delimiter) isAsciiValueTheBeginningOfDelimiter() bool {
-	expectedEnd := d.Scanner.lastScanOffset + len(d.delimiter())
-	return expectedEnd <= len(d.Scanner.r.s) && d.Scanner.r.s[d.Scanner.lastScanOffset:expectedEnd] == d.delimiter()
-}
-
-var ErrDelimiterIsCommentStyle = errors.New("please do not use c-style comment as delimiter")
+var ErrDelimiterCanNotExtractToken = errors.New("sorry, we cannot extract any token form the delimiter you provide, please change a delimiter")
 var ErrDelimiterContainsBackslash = errors.New("DELIMITER cannot contain a backslash character")
 var ErrDelimiterContainsBlankSpace = errors.New("DELIMITER should not contain blank space")
 var ErrDelimiterMissing = errors.New("DELIMITER must be followed by a 'delimiter' character or string")
@@ -274,16 +265,14 @@ var ErrDelimiterReservedKeyword = errors.New("delimiter should not use a reserve
 
  1. 不允许分隔符内部包含反斜杠
  2. 不允许分隔符为空字符串
- 3. 不允许分隔符为C语言风格的注释，因为scanner在扫描token的时候会跳过注释内容，处理情况复杂
- 4. 不允许分隔符为mysql的保留字，因为这样会被scanner扫描为其他类型的token，从而绕过判断分隔符的逻辑
+ 3. 不允许分隔符为mysql的保留字，因为这样会被scanner扫描为其他类型的token，从而绕过判断分隔符的逻辑
 
 注：其中1和2与MySQL客户端对分隔符内容一致，错误内容参考MySQL客户端源码中的com_delimiter函数
 https://github.com/mysql/mysql-server/blob/824e2b4064053f7daf17d7f3f84b7a3ed92e5fb4/client/mysql.cc#L4621
 */
 func (d *Delimiter) setDelimiter(delimiter string) (err error) {
-
-	if isCommentLikeC(delimiter) {
-		return ErrDelimiterIsCommentStyle
+	if delimiter == "" {
+		return ErrDelimiterMissing
 	}
 	if strings.Contains(delimiter, BackSlashString) {
 		return ErrDelimiterContainsBackslash
@@ -291,44 +280,17 @@ func (d *Delimiter) setDelimiter(delimiter string) (err error) {
 	if strings.Contains(delimiter, BlankSpace) {
 		return ErrDelimiterContainsBlankSpace
 	}
-	if delimiter = removeOuterQuotes(delimiter); delimiter == "" {
-		return ErrDelimiterMissing
-	}
 	if isReservedKeyWord(delimiter) {
 		return ErrDelimiterReservedKeyword
 	}
-
+	token := &yySymType{}
+	d.FirstTokenTypeOfDelimiter = NewScanner(delimiter).Lex(token)
+	if d.FirstTokenTypeOfDelimiter == 0 {
+		return ErrDelimiterCanNotExtractToken
+	}
+	d.FirstTokenValueOfDelimiter = token.ident
 	d.DelimiterStr = delimiter
-	d.DelimiterBytes = []byte(delimiter)
 	return nil
-}
-
-func isCommentLikeC(str string) bool {
-	re := regexp.MustCompile(`^\/\*[\s\S]*?\*\/$`)
-	return re.MatchString(str)
-}
-
-// 定义分隔符的时候如果使用引号将分隔符进行包裹，则需要自动去掉一层引号
-func removeOuterQuotes(s string) string {
-	// 匹配单引号
-	singleQuoteRegex := regexp.MustCompile(`^'(.*)'$`)
-	matches := singleQuoteRegex.FindStringSubmatch(s)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	// 匹配双引号
-	doubleQuoteRegex := regexp.MustCompile(`^"(.*)"$`)
-	matches = doubleQuoteRegex.FindStringSubmatch(s)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	// 匹配反引号
-	backTickRegex := regexp.MustCompile("`(.*)`")
-	matches = backTickRegex.FindStringSubmatch(s)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	return s
 }
 
 func isReservedKeyWord(input string) bool {
@@ -341,8 +303,4 @@ func isReservedKeyWord(input string) bool {
 	}
 	// 如果分隔符识别为一个关键字，但不知道是哪个关键字，则为identifier，此时就非保留字
 	return tokenType != identifier && tokenType > yyEOFCode && tokenType < yyDefault
-}
-
-func (d *Delimiter) delimiter() string {
-	return d.DelimiterStr
 }
