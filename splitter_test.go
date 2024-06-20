@@ -66,33 +66,6 @@ func TestSplitterProcess(t *testing.T) {
 	}
 }
 
-func TestRemoveOuterQuotes(t *testing.T) {
-	testCases := []struct {
-		input    string
-		expected string
-	}{
-		// 使用引号
-		{"'hello'", "hello"},
-		{`"world"`, "world"},
-		{"`go`", "go"},
-		{"foo", "foo"},
-		// 引号嵌套
-		{"``", ""},
-		{"`''`", "''"},
-		// 不使用引号包裹
-		{"'bar'baz", "'bar'baz"},
-		{`"did"did`, `"did"did`},
-		{`did`, `did`},
-	}
-
-	for _, tc := range testCases {
-		result := removeOuterQuotes(tc.input)
-		if result != tc.expected {
-			t.Errorf("removeOuterQuotes(%q) = %q, expected %q", tc.input, result, tc.expected)
-		}
-	}
-}
-
 func TestIsDelimiterReservedKeyWord(t *testing.T) {
 	tests := []struct {
 		delimiter string
@@ -166,26 +139,23 @@ func TestIsDelimiterReservedKeyWord(t *testing.T) {
 	}
 }
 
-func TestIsCommentLikeC(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected bool
-	}{
-		{"/* This is a comment */", true},
-		{"/* comment with special chars !@#$%^&*()_+ */", true},
-		{"/* */", true},
-		{"/**/", true},
-		{"/* unclosed comment", false},
-		{"just some text", false},
-		{"// single line comment", false},
-		{"/* This is a comment */ extra text", false},
-		{" extra text /* This is a comment */", false},
+func TestSkipQuotedDelimiter(t *testing.T) {
+	d := NewDelimiter()
+	// 读取文件内容
+	sqls, err := os.ReadFile("splitter_test_skip_quoted_delimiter.sql")
+	if err != nil {
+		t.Fatalf("无法读取文件: %v", err)
 	}
-
-	for _, test := range tests {
-		result := isCommentLikeC(test.input)
-		if result != test.expected {
-			t.Errorf("For input '%s', expected %v but got %v", test.input, test.expected, result)
-		}
+	splitResults, err := d.SplitSqlText(string(sqls))
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	for _, result := range splitResults {
+		fmt.Print("------------------------------\n")
+		fmt.Printf("SQL语句在第%v行\n", result.line)
+		fmt.Printf("SQL语句为:\n%v\n", result.sql)
+	}
+	if len(splitResults) != 26 {
+		t.FailNow()
 	}
 }
