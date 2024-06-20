@@ -34,7 +34,7 @@ func (s *splitter) processToExecutableNodes(results []*sqlWithLineNumber) []ast.
 		if matched, _ := s.delimiter.matchAndSetCustomDelimiter(result.sql); matched {
 			continue
 		}
-		trimmedSQL := strings.TrimSuffix(result.sql, s.delimiter.delimiter())
+		trimmedSQL := strings.TrimSuffix(result.sql, s.delimiter.DelimiterStr)
 		if trimmedSQL == "" {
 			continue
 		}
