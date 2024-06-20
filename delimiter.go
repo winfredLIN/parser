@@ -249,12 +249,6 @@ func (d *Delimiter) isTokenMatchDelimiter(tokenType int, token *yySymType) bool 
 	return false
 }
 
-const (
-	Quotes       byte = '\''
-	DoubleQuotes byte = '"'
-	BackQuotes   byte = '`'
-)
-
 var ErrDelimiterCanNotExtractToken = errors.New("sorry, we cannot extract any token form the delimiter you provide, please change a delimiter")
 var ErrDelimiterContainsBackslash = errors.New("DELIMITER cannot contain a backslash character")
 var ErrDelimiterContainsBlankSpace = errors.New("DELIMITER should not contain blank space")
