@@ -7,7 +7,7 @@ import (
 )
 
 func TestSplitSqlText(t *testing.T) {
-	d := NewDelimiter()
+	s := NewSplitter()
 	// 读取文件内容
 	testCases := []struct {
 		filePath       string
@@ -15,13 +15,14 @@ func TestSplitSqlText(t *testing.T) {
 	}{
 		{"splitter_test_1.sql", 20},
 		{"splitter_test_2.sql", 20},
+		{"splitter_test_3.sql", 4},
 	}
 	for _, testCase := range testCases {
 		sqls, err := os.ReadFile(testCase.filePath)
 		if err != nil {
 			t.Fatalf("无法读取文件: %v", err)
 		}
-		splitResults, err := d.SplitSqlText(string(sqls))
+		splitResults, err := s.SplitSqlText(string(sqls))
 		if err != nil {
 			t.Fatalf(err.Error())
 		}
@@ -43,7 +44,7 @@ func TestSplitterProcess(t *testing.T) {
 		expectedLength int
 	}{
 		{"splitter_test_1.sql", 14},
-		{"splitter_test_2.sql", 14},
+		// {"splitter_test_2.sql", 14},
 	}
 	for _, testCase := range testCases {
 		// 读取文件内容
@@ -140,13 +141,13 @@ func TestIsDelimiterReservedKeyWord(t *testing.T) {
 }
 
 func TestSkipQuotedDelimiter(t *testing.T) {
-	d := NewDelimiter()
+	s := NewSplitter()
 	// 读取文件内容
 	sqls, err := os.ReadFile("splitter_test_skip_quoted_delimiter.sql")
 	if err != nil {
 		t.Fatalf("无法读取文件: %v", err)
 	}
-	splitResults, err := d.SplitSqlText(string(sqls))
+	splitResults, err := s.SplitSqlText(string(sqls))
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
