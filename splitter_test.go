@@ -3,7 +3,10 @@ package parser
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/pingcap/parser/ast"
 )
 
 func TestSplitSqlText(t *testing.T) {
@@ -161,7 +164,6 @@ func TestSkipQuotedDelimiter(t *testing.T) {
 	}
 }
 
-
 func TestStartLine(t *testing.T) {
 	// 测试用例第2个到第5个sql是解析器不能解析的sql
 	p := NewSplitter()
@@ -245,6 +247,336 @@ Alter table point_trans_shard_00_part_202401 ADD CONSTRAINT chk_point_trans_shar
 		} else {
 			if stmt.StartLine() != i+1 {
 				t.Errorf("expect start line is %d, actual is %d", i+1, stmt.StartLine())
+			}
+		}
+	}
+}
+
+func TestPerfectParse(t *testing.T) {
+	parser := NewSplitter()
+
+	stmt, err := parser.ParseSqlText("OPTIMIZE TABLE foo;")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if _, ok := stmt[0].(*ast.UnparsedStmt); !ok {
+		t.Errorf("expect stmt type is unparsedStmt, actual is %T", stmt)
+		return
+	}
+
+	type testCase struct {
+		sql    string
+		expect []string
+	}
+
+	tc := []testCase{
+		{
+			sql: `SELECT * FROM db1.t1`,
+			expect: []string{
+				`SELECT * FROM db1.t1`,
+			},
+		},
+		{
+			sql: `SELECT * FROM db1.t1;SELECT * FROM db2.t2`,
+			expect: []string{
+				"SELECT * FROM db1.t1",
+				"SELECT * FROM db2.t2",
+			},
+		},
+		{
+			sql: "SELECT * FROM db1.t1;OPTIMIZE TABLE foo;SELECT * FROM db2.t2",
+			expect: []string{
+				"SELECT * FROM db1.t1;",
+				"OPTIMIZE TABLE foo;",
+				"SELECT * FROM db2.t2",
+			},
+		},
+		{
+			sql: "OPTIMIZE TABLE foo;SELECT * FROM db1.t1;SELECT * FROM db2.t2",
+			expect: []string{
+				"OPTIMIZE TABLE foo;",
+				"SELECT * FROM db1.t1;",
+				"SELECT * FROM db2.t2",
+			},
+		},
+		{
+			sql: "SELECT * FROM db1.t1;SELECT * FROM db2.t2;OPTIMIZE TABLE foo",
+			expect: []string{
+				"SELECT * FROM db1.t1;",
+				"SELECT * FROM db2.t2;",
+				"OPTIMIZE TABLE foo",
+			},
+		},
+		{
+			sql: "SELECT FROM db2.t2 where a=\"asd;\"; SELECT * FROM db1.t1;",
+			expect: []string{
+				"SELECT FROM db2.t2 where a=\"asd;\";",
+				" SELECT * FROM db1.t1;",
+			},
+		},
+		{
+			sql: "SELECT * FROM db1.t1;OPTIMIZE TABLE foo;OPTIMIZE TABLE foo;SELECT * FROM db2.t2",
+			expect: []string{
+				"SELECT * FROM db1.t1;",
+				"OPTIMIZE TABLE foo;",
+				"OPTIMIZE TABLE foo;",
+				"SELECT * FROM db2.t2",
+			},
+		},
+		{
+			sql: "OPTIMIZE TABLE foo;SELECT * FROM db1.t1;OPTIMIZE TABLE foo;SELECT * FROM db2.t2",
+			expect: []string{
+				"OPTIMIZE TABLE foo;",
+				"SELECT * FROM db1.t1;",
+				"OPTIMIZE TABLE foo;",
+				"SELECT * FROM db2.t2",
+			},
+		},
+		{
+			sql: "SELECT * FROM db1.t1;OPTIMIZE TABLE foo;SELECT * FROM db2.t2;OPTIMIZE TABLE foo",
+			expect: []string{
+				"SELECT * FROM db1.t1;",
+				"OPTIMIZE TABLE foo;",
+				"SELECT * FROM db2.t2;",
+				"OPTIMIZE TABLE foo",
+			},
+		},
+		{
+			sql: `
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+END;
+`,
+			expect: []string{
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+END;`,
+			},
+		},
+		{
+			sql: `
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+SELECT COUNT(*)  FROM user;
+END;
+`,
+			expect: []string{
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+SELECT COUNT(*)  FROM user;
+END;`,
+			},
+		},
+		{
+			sql: `
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+SELECT COUNT(*)  FROM user;
+SELECT COUNT(*)  FROM user;
+END;
+`,
+			expect: []string{
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+SELECT COUNT(*)  FROM user;
+SELECT COUNT(*)  FROM user;
+END;`,
+			},
+		},
+		{
+			sql: `
+SELECT * FROM db1.t1;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+END;
+`,
+			expect: []string{
+				`SELECT * FROM db1.t1;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+END;`,
+			},
+		},
+		{
+			sql: `
+SELECT * FROM db1.t1;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+`,
+			expect: []string{
+				`SELECT * FROM db1.t1;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+			},
+		},
+		{
+			sql: `
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+SELECT * FROM db1.t1;
+`,
+			expect: []string{
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+				`SELECT * FROM db1.t1;`,
+			},
+		},
+		{
+			sql: `
+SELECT * FROM db1.t1;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+SELECT * FROM db1.t1;
+`,
+			expect: []string{
+				`SELECT * FROM db1.t1;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+				`SELECT * FROM db1.t1;`,
+			},
+		},
+		{
+			sql: `
+SELECT * FROM db1.t1;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+SELECT * FROM db1.t1;
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;
+SELECT * FROM db1.t1;
+`,
+			expect: []string{
+				`SELECT * FROM db1.t1;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+				`SELECT * FROM db1.t1;`,
+				`
+CREATE PROCEDURE proc1(OUT s int)
+BEGIN
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+ SELECT COUNT(*)  FROM user;
+END;`,
+				`SELECT * FROM db1.t1;`,
+			},
+		},
+		{ // 匹配特殊字符结束
+			sql: "select * from  �E",
+			expect: []string{
+				`select * from  �E`,
+			},
+		},
+		{ // 匹配特殊字符后是;
+			sql: "select * from  �E;select * from t1",
+			expect: []string{
+				`select * from  �E;`,
+				"select * from t1",
+			},
+		},
+		{ // 匹配特殊字符在中间
+			sql: "select * from  �E where id = 1;select * from  �E ",
+			expect: []string{
+				`select * from  �E where id = 1;`,
+				`select * from  �E `,
+			},
+		},
+		{ // 匹配特殊字符在开头
+			sql: " where id = 1;select * from  �E ",
+			expect: []string{
+				` where id = 1;`,
+				`select * from  �E `,
+			},
+		},
+		{ // 匹配特殊字符在SQL开头
+			sql: "select * from  �E ; where id = 1",
+			expect: []string{
+				`select * from  �E ;`,
+				` where id = 1`,
+			},
+		},
+		{ // 匹配其他invalid场景
+			sql: "@`",
+			expect: []string{
+				"@`",
+			},
+		},
+		{ // 匹配其他invalid场景
+			sql: "@` ;select * from t1",
+			expect: []string{
+				"@` ;select * from t1",
+			},
+		},
+	}
+	for _, c := range tc {
+		stmt, err := parser.splitSqlText(c.sql)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(c.expect) != len(stmt) {
+			t.Errorf("expect sql length is %d, actual is %d, sql is [%s]", len(c.expect), len(stmt), c.sql)
+		} else {
+			for i, s := range stmt {
+				// 之前的测试用例预期对SQL的切分会保留SQL语句的前后的空格
+				// 现在的切分会将SQL前后的空格去掉
+				// 这里统一修改为匹配SQL语句，除去分隔符后的内容是否相等
+				if strings.TrimSuffix(s.sql, ";") != strings.TrimSuffix(strings.TrimSpace(c.expect[i]), ";") {
+					t.Errorf("expect sql is [%s], actual is [%s]", c.expect[i], s.sql)
+				}
 			}
 		}
 	}
