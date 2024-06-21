@@ -1,12 +1,13 @@
 package parser
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/pingcap/parser/ast"
+	parser_formate "github.com/pingcap/parser/format"
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/pingcap/parser/ast"
 )
 
 func TestSplitSqlText(t *testing.T) {
@@ -576,6 +577,149 @@ END;`,
 				// 这里统一修改为匹配SQL语句，除去分隔符后的内容是否相等
 				if strings.TrimSuffix(s.sql, ";") != strings.TrimSuffix(strings.TrimSpace(c.expect[i]), ";") {
 					t.Errorf("expect sql is [%s], actual is [%s]", c.expect[i], s.sql)
+				}
+			}
+		}
+	}
+}
+
+func TestCharset(t *testing.T) {
+	parser := NewSplitter()
+	type testCase struct {
+		sql       string
+		formatSQL string
+		noError   bool
+		errMsg    string
+	}
+
+	tc := []testCase{
+		{
+			sql:       `create table t1(id int, name varchar(255) CHARACTER SET armscii8)`,
+			formatSQL: `CREATE TABLE t1 (id INT,name VARCHAR(255) CHARACTER SET ARMSCII8)`,
+			noError:   true,
+		},
+		{
+			sql:       `create table t1(id int, name varchar(255) CHARACTER SET armscii8 COLLATE armscii8_general_ci)`,
+			formatSQL: "CREATE TABLE t1 (id INT,name VARCHAR(255) CHARACTER SET ARMSCII8 COLLATE armscii8_general_ci)",
+			noError:   true,
+		},
+		{
+			sql:       `create table t1(id int, name varchar(255)) DEFAULT CHARACTER SET armscii8`,
+			formatSQL: "CREATE TABLE t1 (id INT,name VARCHAR(255)) DEFAULT CHARACTER SET = ARMSCII8",
+			noError:   true,
+		},
+		{
+			sql:       `create table t1(id int, name varchar(255)) DEFAULT CHARACTER SET armscii8 COLLATE greek_general_ci`,
+			formatSQL: "CREATE TABLE t1 (id INT,name VARCHAR(255)) DEFAULT CHARACTER SET = ARMSCII8 DEFAULT COLLATE = GREEK_GENERAL_CI",
+			noError:   true,
+		},
+		{
+			sql:       `create table t1(id int, name varchar(255)) DEFAULT CHARACTER SET utf8mb3`,
+			formatSQL: "CREATE TABLE t1 (id INT,name VARCHAR(255)) DEFAULT CHARACTER SET = UTF8",
+			noError:   true,
+		},
+		{
+			sql:       `create table t1(id int, name varchar(255)) DEFAULT CHARACTER SET utf8mb3 COLLATE utf8mb3_bin`,
+			formatSQL: "CREATE TABLE t1 (id INT,name VARCHAR(255)) DEFAULT CHARACTER SET = UTF8 DEFAULT COLLATE = UTF8_BIN",
+			noError:   true,
+		},
+		{
+			sql:       `create table t1(id int, name varchar(255)) DEFAULT CHARACTER SET utf8 COLLATE utf8mb3_bin`,
+			formatSQL: "CREATE TABLE t1 (id INT,name VARCHAR(255)) DEFAULT CHARACTER SET = UTF8 DEFAULT COLLATE = UTF8_BIN",
+			noError:   true,
+		},
+		{
+			sql:       `create table t1(id int, name varchar(255) CHARACTER SET utf8mb3)`,
+			formatSQL: "CREATE TABLE t1 (id INT,name VARCHAR(255) CHARACTER SET UTF8)",
+			noError:   true,
+		},
+		{
+			sql:       `create table t1(id int, name varchar(255) CHARACTER SET utf8mb3 COLLATE cp852_general_ci)`,
+			formatSQL: "CREATE TABLE t1 (id INT,name VARCHAR(255) CHARACTER SET UTF8 COLLATE cp852_general_ci)",
+			noError:   true,
+		},
+		{
+			sql:       `create table t1(id int, name varchar(255))default character set utf8mb3 COLLATE utf8mb3_unicode_ci;`,
+			formatSQL: "CREATE TABLE t1 (id INT,name VARCHAR(255)) DEFAULT CHARACTER SET = UTF8 DEFAULT COLLATE = UTF8_UNICODE_CI",
+			noError:   true,
+		},
+		{
+			sql:       `create table t1(id int, name varchar(255))default character set utf8mb3 COLLATE big5_chinese_ci;`,
+			formatSQL: "CREATE TABLE t1 (id INT,name VARCHAR(255)) DEFAULT CHARACTER SET = UTF8 DEFAULT COLLATE = BIG5_CHINESE_CI",
+			noError:   true,
+		},
+		{
+			sql:     `create table t1(id int, name varchar(255)) DEFAULT CHARACTER SET aaa`,
+			noError: false,
+			errMsg:  "[parser:1115]Unknown character set: 'aaa'",
+		},
+		{
+			sql:     `create table t1(id int, name varchar(255)) DEFAULT CHARACTER SET utf8mb3 COLLATE bbb`,
+			noError: false,
+			errMsg:  "[ddl:1273]Unknown collation: 'bbb'",
+		},
+
+		// 原生测试用例，预期从报错调整为不报错。
+		{
+			sql:       `create table t (a longtext unicode);`,
+			formatSQL: "CREATE TABLE t (a LONGTEXT CHARACTER SET UCS2)",
+			noError:   true,
+		},
+		{
+			sql:       `create table t (a long byte, b text unicode);`,
+			formatSQL: "CREATE TABLE t (a MEDIUMTEXT,b TEXT CHARACTER SET UCS2)",
+			noError:   true,
+		},
+		{
+			sql:       `create table t (a long ascii, b long unicode);`,
+			formatSQL: "CREATE TABLE t (a MEDIUMTEXT CHARACTER SET LATIN1,b MEDIUMTEXT CHARACTER SET UCS2)",
+			noError:   true,
+		},
+		{
+			sql:       `create table t (a text unicode, b mediumtext ascii, c int);`,
+			formatSQL: "CREATE TABLE t (a TEXT CHARACTER SET UCS2,b MEDIUMTEXT CHARACTER SET LATIN1,c INT)",
+			noError:   true,
+		},
+	}
+
+	for _, c := range tc {
+		stmts, err := parser.ParseSqlText(c.sql)
+		if err != nil {
+			if c.noError {
+				t.Error(err)
+				continue
+			}
+			// 现在不会报错，而是解析为为解析节点
+			// if err.Error() != c.errMsg {
+			// 	t.Errorf("expect error message: %s; actual error message: %s", c.errMsg, err.Error())
+			// 	continue
+			// }
+			if len(stmts) > 0 {
+				if _, ok := stmts[0].(*ast.UnparsedStmt); !ok {
+					t.Errorf("expect error message: %s; actual error message: %s", c.errMsg, err.Error())
+					continue
+				}
+			}
+			continue
+		} else {
+			if !c.noError {
+				if _, ok := stmts[0].(*ast.UnparsedStmt); !ok {
+					t.Errorf("expect error message: %s; actual error message: %s", c.errMsg, err.Error())
+					continue
+				}
+				// t.Errorf("expect need error, but no error")
+				continue
+			}
+			buf := new(bytes.Buffer)
+			restoreCtx := parser_formate.NewRestoreCtx(parser_formate.RestoreKeyWordUppercase, buf)
+			if len(stmts) > 0 {
+				err = stmts[0].Restore(restoreCtx)
+				if nil != err {
+					t.Error(err)
+					continue
+				}
+				if buf.String() != c.formatSQL {
+					t.Errorf("expect sql format: %s; actual sql format: %s", c.formatSQL, buf.String())
 				}
 			}
 		}
