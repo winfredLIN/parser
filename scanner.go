@@ -19,8 +19,8 @@ func (s *ScannerForSplitter) Offset() int {
 	return s.scanner.lastScanOffset
 }
 
-func (s *ScannerForSplitter) Seek(offset int) {
-	s.scanner.lastScanOffset += offset
+func (s *ScannerForSplitter) SetCursor(offset int) {
+	s.scanner.lastScanOffset = offset
 }
 
 type Token struct {
