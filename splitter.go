@@ -73,7 +73,9 @@ func (s *splitter) splitSqlText(sqlText string) (results []*sqlWithLineNumber, e
 	if err != nil {
 		return nil, err
 	}
-	results = append(results, result)
+	if result != nil{
+		results = append(results, result)
+	}
 	// 递归切分剩余SQL
 	if s.scanner.Offset() < len(sqlText) {
 		subResults, _ := s.splitSqlText(sqlText[s.scanner.Offset():])
@@ -99,8 +101,12 @@ func (s *splitter) getNextSql(sqlText string) (*sqlWithLineNumber, error) {
 		s.delimiter.line += s.scanner.ScannedLines() // pos().Line-1表示的是该SQL中有多少换行
 		return result, nil
 	}
+	restOfSql := strings.TrimSpace(sqlText)
+	if restOfSql == "" {
+		return nil, nil
+	}
 	return &sqlWithLineNumber{
-		sql:  strings.TrimSpace(sqlText),
+		sql:  restOfSql,
 		line: s.delimiter.line + strings.Count(sqlText[:s.delimiter.startPos], "\n") + 1,
 	}, nil
 }
