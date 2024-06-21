@@ -850,3 +850,74 @@ func TestGeometryColumn(t *testing.T) {
 		}
 	}
 }
+
+func TestIndexConstraint(t *testing.T) {
+	parser := NewSplitter()
+	type testCase struct {
+		sql             string
+		indexConstraint interface{}
+	}
+	tc := []testCase{
+		{
+			sql:             "CREATE TABLE t (id INT PRIMARY KEY, g POINT, SPATIAL INDEX(g))",
+			indexConstraint: ast.ConstraintSpatial,
+		},
+		{
+			sql:             "ALTER TABLE geom ADD SPATIAL INDEX(g)",
+			indexConstraint: ast.ConstraintSpatial,
+		},
+		{
+			sql:             "CREATE SPATIAL INDEX g ON geom (g)",
+			indexConstraint: ast.IndexKeyTypeSpatial,
+		},
+	}
+
+	for _, c := range tc {
+		isRight := false
+		stmt, err := parser.ParseSqlText(c.sql)
+		if err != nil {
+			t.Error(err)
+			continue
+		} else {
+			if len(stmt) == 0 {
+				t.Fatalf("result is empty")
+			}
+			switch stmt := stmt[0].(type) {
+			case *ast.CreateTableStmt:
+				indexConstraint, ok := c.indexConstraint.(ast.ConstraintType)
+				if !ok {
+					t.Errorf("sql: %s, indexConstraint is not ConstraintType", c.sql)
+				}
+				for _, constraint := range stmt.Constraints {
+					if constraint.Tp == indexConstraint {
+						isRight = true
+					}
+				}
+			case *ast.AlterTableStmt:
+				indexConstraint, ok := c.indexConstraint.(ast.ConstraintType)
+				if !ok {
+					t.Errorf("sql: %s, indexConstraint is not ConstraintType", c.sql)
+				}
+				for _, spec := range stmt.Specs {
+					if spec.Tp != ast.AlterTableAddConstraint || spec.Constraint == nil {
+						continue
+					}
+					if spec.Constraint.Tp == indexConstraint {
+						isRight = true
+					}
+				}
+			case *ast.CreateIndexStmt:
+				indexKey, ok := c.indexConstraint.(ast.IndexKeyType)
+				if !ok {
+					t.Errorf("sql: %s, indexConstraint is not indexKey", c.sql)
+				}
+				if stmt.KeyType == indexKey {
+					isRight = true
+				}
+			}
+		}
+		if !isRight {
+			t.Errorf("sql: %s, do not get expect indexConstraint: %v", c.sql, c.indexConstraint)
+		}
+	}
+}
