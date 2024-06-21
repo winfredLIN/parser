@@ -151,3 +151,90 @@ func (s *splitter) skipBeginEndBlock(token *Token) *Token {
 	}
 	return token
 }
+
+// ref:https://dev.mysql.com/doc/refman/8.4/en/flow-control-statements.html
+func (s *splitter) isTokenMatchDelimiter(token *Token) bool {
+	switch token.tokenType {
+	case s.delimiter.FirstTokenTypeOfDelimiter:
+		/*
+			在mysql client的语法中需要跳过注释以及分隔符处于引号中的情况，由于scanner.Lex会自动跳过注释，因此，仅需要判断分隔符处于引号中的情况。对于该方法，以分隔符的第一个token作为特征仅需匹配，可能会匹配到由引号括起的情况，存在stringLit和identifier两种token需要进一步判断：
+				1. 当匹配到identifier时，identifier有可能由反引号括起:
+					1. 若identifier没有反引号括起，则不需要判断是否跳过
+					2. 若identifier被反引号括起，匹配的字符串会带上反引号，能在匹配字符串时能够检查出是否需要跳过
+				2. 当匹配到stringLit时，stringLit一定是由单引号或双引号括起:
+					1. 当分隔符第一个token值与stringLit的token值不等，那么一定不是分隔符，则跳过
+					2. 当分隔符第一个token值与stringLit的token值相等， 如："'abc'd" '"abc"d'会因为字符串不匹配而跳过
+		*/
+		// 1. 当分隔符第一个token值与stringLit的token值不等，那么一定不是分隔符，则跳过
+		if token.tokenType == stringLit && token.tokenValue.ident != s.delimiter.FirstTokenValueOfDelimiter {
+			return false
+		}
+		// 2. 定位特征的第一个字符所处的位置
+		indexIntoken := strings.Index(token.tokenValue.ident, s.delimiter.FirstTokenValueOfDelimiter)
+		if indexIntoken == -1 {
+			return false
+		}
+		// 3. 字符串匹配
+		begin := s.scanner.Offset() + indexIntoken
+		end := begin + len(s.delimiter.DelimiterStr)
+		if begin < 0 || end > len(s.scanner.ScannedText()) {
+			return false
+		}
+		expected := s.scanner.ScannedText()[begin:end]
+		if expected != s.delimiter.DelimiterStr {
+			return false
+		}
+		s.scanner.SetCursor(end)
+		return true
+
+	case invalid:
+		s.scanner.handleInvalid()
+	}
+	return false
+}
+
+/*
+该方法检测sql文本开头是否是自定义分隔符语法，若是匹配并更新分隔符:
+
+ 1. 分隔符语法满足：delimiter str 或者 \d str
+ 2. 参考链接：https://dev.mysql.com/doc/refman/5.7/en/mysql-commands.html
+*/
+func (s *splitter) matchAndSetCustomDelimiter(sql string) (bool, error) {
+	// 重置扫描器
+	s.scanner.Reset(sql)
+	// TODO sql a
+	var sqlAfterDelimiter string
+	token := s.scanner.Lex()
+	switch token.tokenType {
+	case BackSlash:
+		if s.delimiter.isSortDelimiterCommand(sql, s.scanner.Offset()) {
+			sqlAfterDelimiter = sql[s.scanner.Offset()+2:] // \d的长度是2字节
+			s.delimiter.startPos = s.scanner.Offset()
+			s.scanner.SetCursor(s.scanner.Offset() + 2)
+		}
+	case identifier:
+		if s.delimiter.isDelimiterCommand(token.tokenValue.ident) {
+			sqlAfterDelimiter = sql[s.scanner.Offset()+9:] //DELIMITER的长度是9字节
+			s.delimiter.startPos = s.scanner.Offset()
+			s.scanner.SetCursor(s.scanner.Offset() + 9)
+		}
+	default:
+		return false, nil
+	}
+	// 处理自定义分隔符
+	if sqlAfterDelimiter != "" {
+		restOfThisLine := strings.Index(sqlAfterDelimiter, "\n")
+		if end == -1 {
+			restOfThisLine = len(sqlAfterDelimiter)
+		}
+		newDelimiter := getDelimiter(sqlAfterDelimiter[:restOfThisLine])
+		if err := s.delimiter.setDelimiter(newDelimiter); err != nil {
+			return false, err
+		}
+		// 若识别到分隔符，则这一整行都为定义分隔符的sql，
+		// 例如 delimiter ;; xx 其中;;为分隔符，而xx不产生任何影响，但属于这条语句
+		s.scanner.SetCursor(s.scanner.Offset() + restOfThisLine)
+		return true, nil
+	}
+	return false, nil
+}
