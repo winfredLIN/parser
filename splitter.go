@@ -202,7 +202,6 @@ func (s *splitter) isTokenMatchDelimiter(token *Token) bool {
 func (s *splitter) matchAndSetCustomDelimiter(sql string) (bool, error) {
 	// 重置扫描器
 	s.scanner.Reset(sql)
-	// TODO sql a
 	var sqlAfterDelimiter string
 	token := s.scanner.Lex()
 	switch token.tokenType {
@@ -224,7 +223,7 @@ func (s *splitter) matchAndSetCustomDelimiter(sql string) (bool, error) {
 	// 处理自定义分隔符
 	if sqlAfterDelimiter != "" {
 		restOfThisLine := strings.Index(sqlAfterDelimiter, "\n")
-		if end == -1 {
+		if restOfThisLine == -1 {
 			restOfThisLine = len(sqlAfterDelimiter)
 		}
 		newDelimiter := getDelimiter(sqlAfterDelimiter[:restOfThisLine])
