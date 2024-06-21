@@ -119,7 +119,7 @@ func (s *splitter) matcheSql(sql string) bool {
 			s.delimiter.startPos = s.delimiter.Scanner.lastScanOffset
 			isFirstToken = false
 		}
-		tokenType, token = s.tarpInBlock(tokenType, token)
+		tokenType, token = s.skipBeginEndBlock(tokenType, token)
 		if s.delimiter.isTokenMatchDelimiter(tokenType, token) {
 			return true
 		}
@@ -127,31 +127,29 @@ func (s *splitter) matcheSql(sql string) bool {
 	return false
 }
 
-func (s *splitter) tarpInBlock(tokenType int, token *yySymType) (int, *yySymType) {
-	var needEndCount uint
+func (s *splitter) skipBeginEndBlock(tokenType int, token *yySymType) (int, *yySymType) {
+	var blockStack []Block
 	if tokenType == begin {
-		needEndCount++
+		blockStack = append(blockStack, BeginEndBlock{})
 	}
-	for needEndCount > 0 {
+	for len(blockStack) > 0 {
 		tokenType = s.delimiter.Scanner.Lex(token)
-		if tokenType == begin {
-			needEndCount++
+		for _, block := range allBlocks {
+			if block.MatchBegin(tokenType, token) {
+				blockStack = append(blockStack, block)
+				break
+			}
 		}
+		// 如果匹配到END，则需要判断END后的token是否匹配当前的Block
 		if tokenType == end {
+			currentBlock := blockStack[len(blockStack)-1]
 			tokenType = s.delimiter.Scanner.Lex(token)
-			if tokenType == ifKwd || tokenType == caseKwd || tokenType == repeat {
-				continue
+			if currentBlock.MatchEnd(tokenType, token) {
+				blockStack = blockStack[:len(blockStack)-1]
 			}
-			if tokenType == identifier {
-				if strings.ToUpper(token.ident) == "WHILE" {
-					continue
-				}
-
-				if strings.ToUpper(token.ident) == "LOOP" {
-					continue
-				}
-			}
-			needEndCount--
+		}
+		if len(blockStack) == 0 {
+			break
 		}
 	}
 	return tokenType, token
