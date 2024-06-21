@@ -22,7 +22,7 @@ func TestSplitSqlText(t *testing.T) {
 		if err != nil {
 			t.Fatalf("无法读取文件: %v", err)
 		}
-		splitResults, err := s.SplitSqlText(string(sqls))
+		splitResults, err := s.splitSqlText(string(sqls))
 		if err != nil {
 			t.Fatalf(err.Error())
 		}
@@ -147,7 +147,7 @@ func TestSkipQuotedDelimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("无法读取文件: %v", err)
 	}
-	splitResults, err := s.SplitSqlText(string(sqls))
+	splitResults, err := s.splitSqlText(string(sqls))
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
