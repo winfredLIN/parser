@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"bytes"
 	"errors"
 	"strings"
 )
@@ -28,55 +27,6 @@ func NewDelimiter() *Delimiter {
 	d := &Delimiter{}
 	d.Scanner = NewScanner("")
 	return d
-}
-
-func (d *Delimiter) SplitSqlText(sqlText string) (results []*sqlWithLineNumber, err error) {
-	d.line = 0
-	d.startPos = 0
-	d.setDelimiter(DefaultDelimiterString)
-	return d.splitSqlText(sqlText)
-}
-
-func (d *Delimiter) splitSqlText(sqlText string) (results []*sqlWithLineNumber, err error) {
-	result, err := d.getNextSql(sqlText)
-	if err != nil {
-		return nil, err
-	}
-	results = append(results, result)
-	// 递归切分剩余SQL
-	if d.Scanner.lastScanOffset < len(sqlText) {
-		subResults, _ := d.splitSqlText(sqlText[d.Scanner.lastScanOffset:])
-		results = append(results, subResults...)
-	}
-	return results, nil
-}
-
-type sqlWithLineNumber struct {
-	sql  string
-	line int
-}
-
-func (d *Delimiter) getNextSql(sqlText string) (*sqlWithLineNumber, error) {
-	matched, err := d.matchAndSetCustomDelimiter(sqlText)
-	if err != nil {
-		return nil, err
-	}
-	// 若匹配到自定义分隔符语法，则输出结果，否则匹配分隔符，输出结果
-	if matched || (d.matcheDelimiter(sqlText) && d.Scanner.lastScanOffset > 0) {
-		buff := bytes.Buffer{}
-		buff.WriteString(sqlText[:d.Scanner.lastScanOffset])
-		lineBeforeStart := strings.Count(sqlText[:d.startPos], "\n")
-		result := &sqlWithLineNumber{
-			sql:  strings.TrimSpace(buff.String()),
-			line: d.line + lineBeforeStart + 1,
-		}
-		d.line += d.Scanner.r.pos().Line - 1 // 表示的是该SQL中有多少换行
-		return result, nil
-	}
-	return &sqlWithLineNumber{
-		sql:  strings.TrimSpace(sqlText),
-		line: d.line + strings.Count(sqlText[:d.startPos], "\n") + 1,
-	}, nil
 }
 
 /*
@@ -181,32 +131,8 @@ func isSpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
-/*
-该方法检测分隔符：
 
-	由于scanner会把分隔符扫描为identifier或者其他单字符token类型，因此分为两种情况处理
-	注意，若将SQL关键字定义为分隔符，目前未处理该情况
-*/
-func (d *Delimiter) matcheDelimiter(sql string) bool {
-
-	d.Scanner.reset(sql)
-	d.Scanner.lastScanOffset = 0
-	token := &yySymType{}
-	var isFirstToken bool = true
-
-	for d.Scanner.lastScanOffset < len(sql) {
-		tokenType := d.Scanner.Lex(token)
-		if isFirstToken {
-			d.startPos = d.Scanner.lastScanOffset
-			isFirstToken = false
-		}
-		if d.isTokenMatchDelimiter(tokenType, token) {
-			return true
-		}
-	}
-	return false
-}
-
+// ref:https://dev.mysql.com/doc/refman/8.4/en/flow-control-statements.html
 func (d *Delimiter) isTokenMatchDelimiter(tokenType int, token *yySymType) bool {
 	switch tokenType {
 	case d.FirstTokenTypeOfDelimiter:
