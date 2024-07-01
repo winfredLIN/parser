@@ -23,9 +23,32 @@ func (s *ScannerForSplitter) SetCursor(offset int) {
 	s.scanner.lastScanOffset = offset
 }
 
+const (
+	Identifier int = identifier
+	YyEOFCode  int = yyEOFCode
+	YyDefault  int = yyDefault
+	IfKwd      int = ifKwd
+	CaseKwd    int = caseKwd
+	Repeat     int = repeat
+	Begin      int = begin
+	End        int = end
+	StringLit  int = stringLit
+	Invalid    int = invalid
+)
+
+type TokenValue yySymType
+
 type Token struct {
 	tokenType  int
 	tokenValue *yySymType
+}
+
+func (t Token) Ident() string {
+	return t.tokenValue.ident
+}
+
+func (t Token) TokenType() int {
+	return t.tokenType
 }
 
 func (s *ScannerForSplitter) Lex() *Token {
@@ -45,7 +68,7 @@ func (s *ScannerForSplitter) ScannedText() string {
 	return s.scanner.r.s
 }
 
-func (s *ScannerForSplitter) handleInvalid() {
+func (s *ScannerForSplitter) HandleInvalid() {
 	if s.scanner.lastScanOffset == s.scanner.r.p.Offset {
 		s.scanner.r.inc()
 	}

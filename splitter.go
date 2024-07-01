@@ -84,7 +84,7 @@ func (s *splitter) splitSqlText(sqlText string) (results []*sqlWithLineNumber, e
 	return results, nil
 }
 
-func (s *splitter) getNextSql(sqlText string) (*sqlWithLineNumber, error) {
+func (s *splitter)  getNextSql(sqlText string) (*sqlWithLineNumber, error) {
 	matcheDelimiterCommand, err := s.matchAndSetCustomDelimiter(sqlText)
 	if err != nil {
 		return nil, err
@@ -194,7 +194,7 @@ func (s *splitter) isTokenMatchDelimiter(token *Token) bool {
 		return true
 
 	case invalid:
-		s.scanner.handleInvalid()
+		s.scanner.HandleInvalid()
 	}
 	return false
 }
