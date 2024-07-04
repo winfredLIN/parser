@@ -1,26 +1,19 @@
 package parser
 
-type ScannerForSplitter struct {
-	scanner *Scanner
+// 这个Reset方法在原有reset()方法上增加了将最后扫描的偏移量置零
+func (s *Scanner) Reset(sql string) {
+	s.reset(sql)
+	s.lastScanOffset = 0
 }
 
-func NewScannerForSplitter() *ScannerForSplitter {
-	return &ScannerForSplitter{
-		scanner: NewScanner(""),
-	}
+// 该方法返回Scanner最后扫描到的位置
+func (s *Scanner) Offset() int {
+	return s.lastScanOffset
 }
 
-func (s *ScannerForSplitter) Reset(sql string) {
-	s.scanner.reset(sql)
-	s.scanner.lastScanOffset = 0
-}
-
-func (s *ScannerForSplitter) Offset() int {
-	return s.scanner.lastScanOffset
-}
-
-func (s *ScannerForSplitter) SetCursor(offset int) {
-	s.scanner.lastScanOffset = offset
+// 该方法修改Scanner最后扫描到的位置
+func (s *Scanner) SetCursor(offset int) {
+	s.lastScanOffset = offset
 }
 
 const (
@@ -51,25 +44,25 @@ func (t Token) TokenType() int {
 	return t.tokenType
 }
 
-func (s *ScannerForSplitter) Lex() *Token {
+func (s *Scanner) NextToken() *Token {
 	tokenValue := &yySymType{}
-	tokenType := s.scanner.Lex(tokenValue)
+	tokenType := s.Lex(tokenValue)
 	return &Token{
 		tokenType:  tokenType,
 		tokenValue: tokenValue,
 	}
 }
 
-func (s *ScannerForSplitter) ScannedLines() int {
-	return s.scanner.r.pos().Line - 1
+func (s *Scanner) ScannedLines() int {
+	return s.r.pos().Line - 1
 }
 
-func (s *ScannerForSplitter) ScannedText() string {
-	return s.scanner.r.s
+func (s *Scanner) Text() string {
+	return s.r.s
 }
 
-func (s *ScannerForSplitter) HandleInvalid() {
-	if s.scanner.lastScanOffset == s.scanner.r.p.Offset {
-		s.scanner.r.inc()
+func (s *Scanner) HandleInvalid() {
+	if s.lastScanOffset == s.r.p.Offset {
+		s.r.inc()
 	}
 }
